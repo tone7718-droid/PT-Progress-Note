@@ -1,0 +1,20 @@
+# Mobile / desktop build artifacts (not needed for web deploy)
+android/
+ios/
+src-tauri/
+capacitor.config.ts
+
+# Supabase Edge Function source (deployed separately via supabase CLI)
+supabase/
+
+# Local dev
+.next/
+out/
+node_modules/
+
+# Docs
+*.md
+!README.md
+
+# Misc
+lint_output.txt

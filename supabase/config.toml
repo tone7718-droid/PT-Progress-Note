@@ -1,0 +1,8 @@
+project_id = "pt-progress-note"
+
+# create-therapist 함수: 플랫폼 레벨 JWT 검증 비활성화.
+# 이유: 프로젝트가 ES256(비대칭) JWT 서명을 사용하는데, Edge Functions
+# 기본 JWT verifier가 이를 거부하면서 "Invalid JWT" 401을 반환함.
+# 함수 내부에서 adminClient.auth.getUser(jwt)로 직접 검증하므로 안전함.
+[functions.create-therapist]
+verify_jwt = false

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">물리치료 Progress Note</string>
+    <string name="title_activity_main">물리치료 Progress Note</string>
+    <string name="package_name">com.ptprogressnote.app</string>
+    <string name="custom_url_scheme">com.ptprogressnote.app</string>
+</resources>
