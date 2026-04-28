@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PT-NOTE
 
-## Getting Started
+> **Proprietary software for physical therapy progress notes.**
+> **All rights reserved. No reuse permitted without explicit written permission.**
+> See [LICENSE](./LICENSE) for full terms.
 
-First, run the development server:
+물리치료(도수치료) 환자의 평가 및 치료 내용을 기록하기 위한 데스크톱·웹 애플리케이션.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Tech Stack
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **Frontend**: Next.js 16 (Turbopack, static export), React 19, TypeScript, Tailwind CSS
+- **State**: Zustand
+- **Backend (cloud mode)**: Supabase (Auth, Postgres, RLS, Edge Functions)
+- **Storage (local mode)**: Browser localStorage via `lib/localDataService.ts`
+- **Desktop**: Tauri v2 (Windows MSI/NSIS, macOS, Linux)
+- **Mobile**: Capacitor v8 (Android, iOS)
+- **Web hosting**: Vercel
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Distribution
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Web**: https://pt-progress-note.vercel.app
+- **Windows desktop**: Download from [GitHub Releases](https://github.com/tone7718-droid/PT-Progress-Note/releases/latest)
 
-## Learn More
+The desktop app includes a built-in auto-updater that checks
+[`releases/latest/download/latest.json`](https://github.com/tone7718-droid/PT-Progress-Note/releases/latest/download/latest.json)
+and prompts the user when a new signed release is available.
 
-To learn more about Next.js, take a look at the following resources:
+## Documentation
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- [Tauri release procedure](./docs/tauri-release-guide.md)
+- [Code signing guide](./docs/code-signing-guide.md)
+- [Supabase setup](./docs/supabase-setup-guide.md)
+- [Database schema](./docs/supabase-schema.sql)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## License
 
-## Deploy on Vercel
+This project is **proprietary**. The source code is publicly viewable for
+transparency, automatic-update manifest hosting, and personal portfolio
+purposes only — public viewability does not grant any license to reuse,
+modify, or redistribute. See [LICENSE](./LICENSE) for full terms.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For commercial licensing or partnership inquiries, contact: **tone7718@gmail.com**
