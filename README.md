@@ -18,7 +18,7 @@
 
 ## Distribution
 
-- **Web**: https://pt-progress-note.vercel.app
+- **Web**: https://ptnote.vercel.app
 - **Windows desktop**: Download from [GitHub Releases](https://github.com/tone7718-droid/PT-Progress-Note/releases/latest)
 
 The desktop app includes a built-in auto-updater that checks
