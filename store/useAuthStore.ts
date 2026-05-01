@@ -14,6 +14,7 @@ interface AuthStore {
   reauthenticate: (loginId: string, password: string) => Promise<boolean>;
   registerTherapist: (loginId: string, name: string, password: string) => Promise<void>;
   resignTherapist: (uid: string) => Promise<void>;
+  deleteTherapist: (uid: string) => Promise<void>;
   updateTherapistPassword: (newPassword: string) => Promise<void>;
   setError: (err: string | null) => void;
   setLoading: (isLoading: boolean) => void;
@@ -66,6 +67,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
       therapists: state.therapists.map((t) =>
         t.uid === uid ? { ...t, id: null, resigned: true } : t
       ),
+    }));
+  },
+
+  deleteTherapist: async (uid) => {
+    await ds.deleteTherapistDb(uid);
+    set((state) => ({
+      therapists: state.therapists.filter((t) => t.uid !== uid),
     }));
   },
 

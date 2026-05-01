@@ -13,6 +13,7 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
   const therapists = useAuthStore((s) => s.therapists);
   const registerTherapist = useAuthStore((s) => s.registerTherapist);
   const resignTherapist = useAuthStore((s) => s.resignTherapist);
+  const deleteTherapist = useAuthStore((s) => s.deleteTherapist);
   const currentTherapist = useAuthStore((s) => s.therapist);
   const [activeTab, setActiveTab] = useState<"register" | "list">("register");
 
@@ -28,6 +29,11 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
   const [resigningTherapist, setResigningTherapist] = useState<TherapistRecord | null>(null);
   const [resignError, setResignError] = useState("");
   const [resigning, setResigning] = useState(false);
+
+  /* 영구 삭제 (퇴사한 치료사 내역 정리) */
+  const [deletingTherapist, setDeletingTherapist] = useState<TherapistRecord | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const activeTherapists = therapists.filter((t) => !t.resigned && t.role !== "master");
   const resignedTherapists = therapists.filter((t) => t.resigned);
@@ -70,6 +76,26 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
       setResignError((err as Error).message || "퇴사 처리 중 오류가 발생했습니다.");
     } finally {
       setResigning(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingTherapist) return;
+    setDeleteError("");
+
+    if (currentTherapist?.role !== "master") {
+      setDeleteError("마스터 계정만 삭제할 수 있습니다.");
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      await deleteTherapist(deletingTherapist.uid);
+      setDeletingTherapist(null);
+    } catch (err) {
+      setDeleteError((err as Error).message || "삭제 중 오류가 발생했습니다.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -148,11 +174,23 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
               {resignedTherapists.length > 0 && (
                 <div>
                   <h3 className="text-sm font-bold text-gray-400 mb-3 uppercase tracking-wider">퇴사한 치료사</h3>
-                  <div className="grid grid-cols-1 gap-3 opacity-60">
+                  <div className="grid grid-cols-1 gap-3">
                     {resignedTherapists.map((t) => (
                       <div key={t.uid} className="flex items-center justify-between p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl">
-                        <p className="font-bold text-gray-600">{t.name} (퇴사)</p>
-                        <span className="text-xs font-bold text-gray-400">ID 해제됨</span>
+                        <div className="flex items-center gap-3 opacity-60">
+                          <p className="font-bold text-gray-600">{t.name} (퇴사)</p>
+                          <span className="text-xs font-bold text-gray-400">ID 해제됨</span>
+                        </div>
+                        {currentTherapist?.role === "master" && (
+                          <button
+                            onClick={() => setDeletingTherapist(t)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                            aria-label={`${t.name} 기록 영구 삭제`}
+                            title="이 퇴사 기록 영구 삭제"
+                          >
+                            <X size={18} />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -181,6 +219,30 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
               <button onClick={() => { setResigningTherapist(null); setResignError(""); }} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all">취소</button>
               <button onClick={handleResign} disabled={resigning} className="flex-1 py-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-bold rounded-2xl transition-all shadow-lg">
                 {resigning ? "처리 중..." : "퇴사 처리"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 영구 삭제 확인 모달 */}
+      {deletingTherapist && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-6 mx-auto">
+              <AlertCircle size={32} className="text-red-500" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2 text-center text-balance">기록 영구 삭제</h3>
+            <p className="text-center text-gray-500 mb-6 leading-relaxed">
+              <span className="font-bold text-red-500">{deletingTherapist.name}</span>의 퇴사 기록을<br />목록에서 영구 삭제하시겠습니까?<br />
+              <span className="text-xs text-gray-400 mt-2 block">※ 이 치료사가 작성한 기존 노트는 그대로 유지됩니다.</span>
+            </p>
+
+            {deleteError && <p className="text-red-500 text-xs font-bold text-center mb-3">{deleteError}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => { setDeletingTherapist(null); setDeleteError(""); }} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all">취소</button>
+              <button onClick={handleDelete} disabled={deleting} className="flex-1 py-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-bold rounded-2xl transition-all shadow-lg">
+                {deleting ? "삭제 중..." : "영구 삭제"}
               </button>
             </div>
           </div>

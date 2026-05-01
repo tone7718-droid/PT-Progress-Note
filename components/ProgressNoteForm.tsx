@@ -32,8 +32,22 @@ export default function ProgressNoteForm() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [outputMenuOpen, setOutputMenuOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const outputMenuRef = useRef<HTMLDivElement>(null);
+
+  // 출력 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!outputMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (outputMenuRef.current && !outputMenuRef.current.contains(e.target as Node)) {
+        setOutputMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [outputMenuOpen]);
 
   // 현재 값 구독 (하단 서명 및 토스트용)
   const patientName = watch("patientName");
@@ -157,9 +171,38 @@ export default function ProgressNoteForm() {
                 물리치료 환자 평가지
               </h1>
               
-              <div className={`absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 ${isGeneratingPdf ? 'hidden' : 'hidden sm:flex print:hidden'}`}>
-                <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl shadow-sm transition-all" aria-label="기록 인쇄">🖨️ 인쇄</button>
-                <button type="button" onClick={handleDownloadPDF} className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md hover:shadow-xl transition-all" aria-label="PDF로 저장">📄 PDF로 저장하기</button>
+              <div ref={outputMenuRef} className={`absolute right-0 top-1/2 -translate-y-1/2 ${isGeneratingPdf ? 'hidden' : 'hidden sm:block print:hidden'}`}>
+                <button
+                  type="button"
+                  onClick={() => setOutputMenuOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={outputMenuOpen}
+                  aria-label="출력 옵션 열기"
+                  className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md hover:shadow-xl transition-all"
+                >
+                  📄 출력
+                  <span className={`text-xs transition-transform ${outputMenuOpen ? 'rotate-180' : ''}`}>▾</span>
+                </button>
+                {outputMenuOpen && (
+                  <div role="menu" className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-150">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setOutputMenuOpen(false); handleDownloadPDF(); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 hover:bg-blue-50 font-bold transition-colors"
+                    >
+                      <span>📄</span> PDF로 저장
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setOutputMenuOpen(false); window.print(); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 hover:bg-blue-50 font-bold border-t border-gray-100 transition-colors"
+                    >
+                      <span>🖨️</span> 인쇄
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

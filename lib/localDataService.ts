@@ -247,6 +247,20 @@ export async function resignTherapistDb(uid: string): Promise<void> {
   );
 }
 
+/**
+ * 퇴사 처리된 치료사 레코드를 영구 삭제.
+ * 이미 작성된 노트의 therapist 스냅샷은 그대로 유지되어 표시에 영향 없음.
+ * 마스터 계정은 삭제 불가 (방어 로직).
+ */
+export async function deleteTherapistDb(uid: string): Promise<void> {
+  const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  const target = therapists.find((t) => t.uid === uid);
+  if (!target) throw new Error("해당 치료사를 찾을 수 없습니다.");
+  if (target.role === "master") throw new Error("마스터 계정은 삭제할 수 없습니다.");
+  if (!target.resigned) throw new Error("퇴사 처리된 치료사만 삭제할 수 있습니다.");
+  write(THERAPISTS_KEY, therapists.filter((t) => t.uid !== uid));
+}
+
 export async function updateTherapistPasswordViaAuth(
   newPassword: string
 ): Promise<void> {
