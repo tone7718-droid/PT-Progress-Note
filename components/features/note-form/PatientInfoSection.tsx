@@ -12,14 +12,18 @@ export function PatientInfoSection({ isGeneratingPdf }: { isGeneratingPdf: boole
 
   const sectionTitleCls = isGeneratingPdf
     ? "text-lg font-bold text-black border-b-2 border-gray-400 pb-1 mb-2 mt-4"
-    : "text-2xl font-bold text-gray-900 border-b-2 border-gray-100 pb-3 mb-6 print:text-xl print:mb-3 print:pb-2 print:-mt-2";
+    : "text-base sm:text-2xl font-bold text-gray-900 border-b-2 border-gray-100 pb-2 sm:pb-3 mb-3 sm:mb-6 print:text-xl print:mb-3 print:pb-2 print:-mt-2";
+
+  const labelCls = isGeneratingPdf
+    ? "text-sm text-black mb-1 block font-bold"
+    : "text-xs sm:text-base text-gray-700 print:text-sm block font-bold mb-1 sm:mb-2";
 
   return (
     <Card isPdfMode={isGeneratingPdf}>
       <h2 className={sectionTitleCls}>1. 기본 정보 (Patient Information)</h2>
-      <div className={`grid ${isGeneratingPdf ? 'grid-cols-2 gap-4' : 'grid-cols-1 md:grid-cols-2 gap-6 print:gap-4 print:grid-cols-2'}`}>
+      <div className={`grid ${isGeneratingPdf ? 'grid-cols-2 gap-4' : 'grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 print:gap-4 print:grid-cols-2'}`}>
         <div>
-          <label className={`block font-bold mb-2 ${isGeneratingPdf ? 'text-sm text-black mb-1' : 'text-base text-gray-700 print:text-sm'}`}>
+          <label className={labelCls}>
             환자 성명 <span className="text-red-500">*</span>
           </label>
           <Input 
@@ -30,25 +34,25 @@ export function PatientInfoSection({ isGeneratingPdf }: { isGeneratingPdf: boole
           />
         </div>
         <div>
-          <label className={`block font-bold mb-2 ${isGeneratingPdf ? 'text-sm text-black mb-1' : 'text-base text-gray-700 print:text-sm'}`}>차트 번호</label>
+          <label className={labelCls}>차트 번호</label>
           <Input isPdfMode={isGeneratingPdf} placeholder="예: PT-20260318-01" {...register("chartNo")} />
         </div>
         <div>
-          <label className={`block font-bold mb-2 ${isGeneratingPdf ? 'text-sm text-black mb-1' : 'text-base text-gray-700 print:text-sm'}`}>생년월일</label>
+          <label className={labelCls}>생년월일</label>
           <Input type="date" isPdfMode={isGeneratingPdf} {...register("birthDate")} />
         </div>
 
         {/* 성별 선택 */}
         <div className={isGeneratingPdf ? "hidden" : "print:hidden"}>
-          <label className="block text-base font-bold text-gray-700 mb-2">성별</label>
-          <div className="flex items-center space-x-8 mt-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+          <label className={labelCls}>성별</label>
+          <div className="flex items-center gap-4 sm:gap-8 mt-1 sm:mt-4 bg-gray-50 px-3 py-2 sm:p-4 rounded-xl sm:rounded-2xl border border-gray-100">
             <label className="flex items-center cursor-pointer group">
-              <input type="radio" value="M" className="w-5 h-5 text-blue-600" {...register("gender")} />
-              <span className="ml-3 font-semibold text-gray-800 group-hover:text-blue-600">남성 (M)</span>
+              <input type="radio" value="M" className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" {...register("gender")} />
+              <span className="ml-2 sm:ml-3 text-sm sm:text-base font-semibold text-gray-800 group-hover:text-blue-600">남성 (M)</span>
             </label>
             <label className="flex items-center cursor-pointer group">
-              <input type="radio" value="F" className="w-5 h-5 text-blue-600" {...register("gender")} />
-              <span className="ml-3 font-semibold text-gray-800 group-hover:text-blue-600">여성 (F)</span>
+              <input type="radio" value="F" className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" {...register("gender")} />
+              <span className="ml-2 sm:ml-3 text-sm sm:text-base font-semibold text-gray-800 group-hover:text-blue-600">여성 (F)</span>
             </label>
           </div>
         </div>
@@ -61,25 +65,25 @@ export function PatientInfoSection({ isGeneratingPdf }: { isGeneratingPdf: boole
           </div>
         </div>
 
-        <div className="col-span-2">
-          <label className={`block font-bold mb-2 ${isGeneratingPdf ? 'text-sm text-black mb-1' : 'text-base text-gray-700 print:text-sm'}`}>
+        <div className="col-span-1 md:col-span-2">
+          <label className={labelCls}>
             진단명 <span className="text-red-500">*</span>
           </label>
-          <Input 
-            isPdfMode={isGeneratingPdf} 
+          <Input
+            isPdfMode={isGeneratingPdf}
             placeholder="예: 요추 추간판 탈출증"
             className={errors.diagnosis ? "!border-red-400 !ring-red-100" : ""}
-            {...register("diagnosis", { required: "진단명을 입력해주세요" })} 
+            {...register("diagnosis", { required: "진단명을 입력해주세요" })}
           />
         </div>
-        <div className="col-span-2">
-          <label className={`block font-bold mb-2 ${isGeneratingPdf ? 'text-sm text-black mb-1' : 'text-base text-gray-700 print:text-sm'}`}>과거력 (PMH)</label>
+        <div className="col-span-1 md:col-span-2">
+          <label className={labelCls}>과거력 (PMH)</label>
           <Input isPdfMode={isGeneratingPdf} placeholder="고혈압, 당뇨 등 기재" {...register("pmh")} />
         </div>
       </div>
-      
+
       {/* 통증 점수 */}
-      <div className={`${isGeneratingPdf ? 'hidden' : 'mt-8 bg-gray-50 p-6 rounded-3xl border border-gray-100 print:hidden'}`}>
+      <div className={`${isGeneratingPdf ? 'hidden' : 'mt-4 sm:mt-8 bg-gray-50 p-3 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-100 print:hidden'}`}>
         <Controller
           name="painScore"
           control={control}

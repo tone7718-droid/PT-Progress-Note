@@ -110,20 +110,20 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
 
   const sectionTitleCls = isGeneratingPdf
     ? "text-lg font-bold text-black border-b-2 border-gray-400 pb-1 mb-2 mt-4"
-    : "text-2xl font-bold text-gray-900 border-b-2 border-gray-100 pb-3 mb-6 print:text-xl print:mb-3 print:pb-2 print:-mt-2";
+    : "text-base sm:text-2xl font-bold text-gray-900 border-b-2 border-gray-100 pb-2 sm:pb-3 mb-3 sm:mb-6 print:text-xl print:mb-3 print:pb-2 print:-mt-2";
 
   return (
     <Card isPdfMode={isGeneratingPdf}>
       <h2 className={sectionTitleCls}>4. 관절 가동범위 (ROM &amp; Flexibility)</h2>
-      
-      <div className={cn("bg-white rounded-2xl border-2 border-slate-100 p-6 shadow-sm min-h-[250px]", isGeneratingPdf && "border-none shadow-none p-0")}>
+
+      <div className={cn("bg-white rounded-xl sm:rounded-2xl border-2 border-slate-100 p-3 sm:p-6 shadow-sm min-h-[180px] sm:min-h-[250px]", isGeneratingPdf && "border-none shadow-none p-0")}>
         <div className="hidden lg:grid lg:grid-cols-[1fr_1.5fr_48px] gap-6 mb-4 px-2">
           <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">관절 동작 선택</span>
           <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">측정 ROM & 정상 범위</span>
           <span />
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-3 sm:space-y-5">
           {fields.map((field, index) => {
             const currentVal = romValues?.[index] || field;
             const suggestions = getFilteredJoints(currentVal.joint);
@@ -135,7 +135,7 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
               <div
                 key={field.id}
                 className={cn(
-                  "grid grid-cols-1 gap-4 items-center p-4 rounded-2xl border-2 transition-all relative",
+                  "grid grid-cols-1 gap-2 sm:gap-4 items-center p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border-2 transition-all relative",
                   isGeneratingPdf ? "lg:grid-cols-[1fr_1.5fr] border-none p-2 border-b border-gray-200" : "lg:grid-cols-[1fr_1.5fr_48px]",
                   isSelected && !isGeneratingPdf ? "bg-blue-50/30 border-blue-100" : "bg-gray-50/50 border-gray-100",
                   isGeneratingPdf && "bg-transparent border-b-gray-300 rounded-none pb-2"
@@ -223,8 +223,8 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
                 </div>
 
                 {/* 2) 측정 ROM + 정상 범위 */}
-                <div className="flex items-center gap-3">
-                  <div className="relative min-w-[140px] max-w-[160px] shrink-0">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="relative min-w-[100px] sm:min-w-[140px] max-w-[160px] shrink-0">
                     <Controller
                       control={control}
                       name={`rom.${index}.measuredROM`}
@@ -236,7 +236,7 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
                           min={0}
                           max={360}
                           className={cn(
-                            "pr-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-center font-bold text-xl",
+                            "pr-6 sm:pr-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-center font-bold !text-base sm:!text-xl",
                             isSelected && !isGeneratingPdf ? "text-blue-700 bg-white ring-2 ring-blue-100 placeholder-blue-200" : !isGeneratingPdf ? "bg-gray-100 text-gray-400 placeholder-gray-300" : ""
                           )}
                           placeholder="0"
@@ -244,13 +244,13 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
                         />
                       )}
                     />
-                    <span className={`absolute right-4 top-1/2 -translate-y-1/2 font-bold pointer-events-none select-none text-lg ${isSelected ? 'text-blue-400' : 'text-gray-300'}`}>
+                    <span className={`absolute right-2.5 sm:right-4 top-1/2 -translate-y-1/2 font-bold pointer-events-none select-none text-base sm:text-lg ${isSelected ? 'text-blue-400' : 'text-gray-300'}`}>
                       °
                     </span>
                   </div>
 
-                  <span className={`flex-1 text-base font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 ${isSelected ? "text-slate-600" : "text-gray-300 italic"}`}>
-                    {isSelected ? `/ 정상 범위 : ${normalRange}` : "관절 선택 시 표시"}
+                  <span className={`flex-1 text-xs sm:text-base font-bold whitespace-nowrap overflow-hidden text-ellipsis px-1 sm:px-2 ${isSelected ? "text-slate-600" : "text-gray-300 italic"}`}>
+                    {isSelected ? `/ 정상 : ${normalRange}` : "관절 선택 시 표시"}
                   </span>
                 </div>
 
@@ -259,7 +259,7 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
                   <button
                     type="button"
                     onClick={() => remove(index)}
-                    className="h-[3.5rem] w-full lg:w-12 flex items-center justify-center rounded-xl text-red-400 hover:text-red-700 hover:bg-red-50 transition-colors border-2 border-transparent hover:border-red-200 bg-white shadow-sm"
+                    className="h-10 sm:h-[3.5rem] w-full lg:w-12 flex items-center justify-center rounded-lg sm:rounded-xl text-red-400 hover:text-red-700 hover:bg-red-50 transition-colors border-2 border-transparent hover:border-red-200 bg-white shadow-sm"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -272,13 +272,13 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
         </div>
 
         {!isGeneratingPdf && (
-          <div className="mt-8 flex justify-center">
+          <div className="mt-4 sm:mt-8 flex justify-center">
             <button
               type="button"
               onClick={() => append({ joint: "", measuredROM: "", normalRange: "" })}
-              className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 font-extrabold px-8 py-3.5 rounded-2xl hover:bg-blue-50 border-2 border-transparent hover:border-blue-200 transition-all focus:ring-4 focus:ring-blue-500/20 active:scale-95 shadow-sm text-base"
+              className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 font-extrabold px-4 py-2.5 sm:px-8 sm:py-3.5 rounded-xl sm:rounded-2xl hover:bg-blue-50 border-2 border-transparent hover:border-blue-200 transition-all focus:ring-4 focus:ring-blue-500/20 active:scale-95 shadow-sm text-sm sm:text-base"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
               </svg>
               새로운 관절 측정 추가

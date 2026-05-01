@@ -37,20 +37,20 @@ export default function FaceScale({ value: controlledValue, onChange }: FaceScal
 
   return (
     <div>
-      <h3 className="text-base font-bold text-gray-800 mb-8">
+      <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-3 sm:mb-8">
         통증 정도 (VAS 0~10)
       </h3>
 
-      <div className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-3 sm:gap-2 max-w-4xl px-2">
+      <div className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 sm:gap-2 max-w-4xl">
         {scaleData.map((item) => {
           const isSelected = selected === item.value;
           return (
-            <div key={item.value} className="flex flex-col items-center gap-3">
+            <div key={item.value} className="flex flex-col items-center gap-1 sm:gap-3">
               <button
                 type="button"
                 onClick={() => handleSelect(item.value)}
                 className={`
-                  relative flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full text-xl sm:text-2xl font-black
+                  relative flex items-center justify-center w-9 h-9 sm:w-14 sm:h-14 rounded-full text-base sm:text-2xl font-black
                   transition-all duration-300 ease-out cursor-pointer
                   focus:outline-none focus:ring-4 focus:ring-opacity-50
                   ${isSelected
@@ -72,7 +72,7 @@ export default function FaceScale({ value: controlledValue, onChange }: FaceScal
       </div>
 
       {/* 선택된 값 요약 */}
-      <div className="mt-10 h-10 flex items-center">
+      <div className="mt-3 sm:mt-10 h-10 flex items-center">
         {selected !== null && selected !== undefined ? (
           <div
             className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-base font-bold transition-all duration-300"

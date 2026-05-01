@@ -13,7 +13,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         className={cn(
           isPdfMode
             ? "w-full py-1 text-base text-black bg-transparent border-0 border-b border-gray-300 font-medium"
-            : "w-full p-4 text-lg border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-colors text-gray-900 bg-white min-h-[3.5rem] placeholder:text-gray-400 shadow-sm print:shadow-none print:border-gray-300 print:text-base print:p-2 print:min-h-0 print:bg-transparent",
+            : "w-full px-3 py-2.5 sm:p-4 text-sm sm:text-lg border-2 border-gray-200 rounded-xl sm:rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-colors text-gray-900 bg-white min-h-[2.5rem] sm:min-h-[3.5rem] placeholder:text-gray-400 shadow-sm print:shadow-none print:border-gray-300 print:text-base print:p-2 print:min-h-0 print:bg-transparent",
           className
         )}
         ref={ref}

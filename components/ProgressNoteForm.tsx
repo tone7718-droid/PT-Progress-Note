@@ -158,16 +158,16 @@ export default function ProgressNoteForm() {
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSaveSubmit, onInvalid)}>
         <div 
-          className={isGeneratingPdf 
-            ? "bg-white p-0 m-0 text-black w-[800px] overflow-hidden" 
-            : "max-w-5xl mx-auto px-5 sm:px-10 py-10 bg-gray-50/30 min-h-full pb-48 scroll-smooth print:bg-white print:p-0 print:m-0 print:pb-0"
+          className={isGeneratingPdf
+            ? "bg-white p-0 m-0 text-black w-[800px] overflow-hidden"
+            : "max-w-5xl mx-auto px-3 sm:px-10 py-5 sm:py-10 bg-gray-50/30 min-h-full pb-32 sm:pb-48 scroll-smooth print:bg-white print:p-0 print:m-0 print:pb-0"
           }
         >
           <div ref={containerRef} className={isGeneratingPdf ? "bg-white px-8 py-10" : "w-full h-full"}>
             
             {/* 타이틀 & 버튼 */}
-            <div className={`relative pb-6 border-b-2 ${isGeneratingPdf ? 'border-gray-800 mb-6' : 'border-gray-200 mb-10 print:border-transparent print:mb-6 print:pb-2'}`}>
-              <h1 className={`font-extrabold text-center tracking-tight ${isGeneratingPdf ? 'text-3xl text-black' : 'text-3xl sm:text-4xl text-gray-900 print:text-3xl print:text-left print:border-b-4 print:border-gray-800 print:pb-4'}`}>
+            <div className={`relative pb-3 sm:pb-6 border-b-2 ${isGeneratingPdf ? 'border-gray-800 mb-6' : 'border-gray-200 mb-5 sm:mb-10 print:border-transparent print:mb-6 print:pb-2'}`}>
+              <h1 className={`font-extrabold text-center tracking-tight ${isGeneratingPdf ? 'text-3xl text-black' : 'text-xl sm:text-4xl text-gray-900 print:text-3xl print:text-left print:border-b-4 print:border-gray-800 print:pb-4'}`}>
                 물리치료 환자 평가지
               </h1>
               
@@ -218,7 +218,7 @@ export default function ProgressNoteForm() {
               )}
             </div>
 
-            <div className={`text-gray-800 ${isGeneratingPdf ? 'space-y-4' : 'space-y-10 sm:space-y-12 print:space-y-6'}`}>
+            <div className={`text-gray-800 ${isGeneratingPdf ? 'space-y-4' : 'space-y-5 sm:space-y-12 print:space-y-6'}`}>
               <PatientInfoSection isGeneratingPdf={isGeneratingPdf} />
               <ComplaintSection isGeneratingPdf={isGeneratingPdf} />
               <BodyDiagramSection isGeneratingPdf={isGeneratingPdf} />
