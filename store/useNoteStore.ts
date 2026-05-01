@@ -55,8 +55,8 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   initSync: () => {
-    // Auth 상태 리스너 등록
-    const { data: { subscription } } = ds.onAuthStateChange(async (t) => {
+    // Auth 상태 리스너 등록 (cleanup은 앱 생명주기 동안 유지하므로 subscription 미보관)
+    ds.onAuthStateChange(async (t) => {
       useAuthStore.getState().setTherapist(t);
       if (t) {
         set({ isLoading: true });

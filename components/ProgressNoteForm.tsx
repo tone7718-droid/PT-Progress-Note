@@ -95,7 +95,7 @@ export default function ProgressNoteForm() {
     }
   };
 
-  const onInvalid = (errors: any) => {
+  const onInvalid = (errors: Record<string, unknown>) => {
     const errorList: string[] = [];
     if (errors.patientName) errorList.push("환자 성명");
     if (errors.diagnosis) errorList.push("진단명");

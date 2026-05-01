@@ -19,7 +19,7 @@ interface AuthStore {
   setLoading: (isLoading: boolean) => void;
 }
 
-export const useAuthStore = create<AuthStore>((set, get) => ({
+export const useAuthStore = create<AuthStore>((set) => ({
   therapist: null,
   therapists: [],
   isLoading: false,

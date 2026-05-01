@@ -1,7 +1,7 @@
 {
-  "name": "물리치료 Progress Note",
-  "short_name": "PT Note",
-  "description": "물리치료 환자 평가지 및 기록 앱",
+  "name": "PT-NOTE",
+  "short_name": "PT-NOTE",
+  "description": "물리치료(도수치료) 환자 평가 및 기록 앱",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

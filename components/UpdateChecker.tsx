@@ -33,7 +33,6 @@ export default function UpdateChecker() {
     }, 3000);
 
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function checkForUpdate() {

@@ -20,13 +20,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "물리치료 Progress Note",
-  description: "물리치료 환자 평가지 및 기록 애플리케이션",
+  title: "PT-NOTE",
+  description: "물리치료(도수치료) 환자 평가 및 기록 애플리케이션",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "PT Note",
+    title: "PT-NOTE",
   },
 };
 

@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Tauri / native build artifacts
+    "src-tauri/target/**",
+    "src-tauri/gen/**",
+    // Capacitor native projects
+    "android/**",
+    "ios/**",
   ]),
 ]);
 

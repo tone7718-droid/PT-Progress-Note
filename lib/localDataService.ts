@@ -1,11 +1,18 @@
 /**
- * localStorage 기반 데이터 서비스 (임시 로컬 모드)
+ * localStorage 기반 데이터 서비스 (현재 운영 중인 단일 데이터 소스)
  *
- * 클라우드(Supabase) 저장이 완전히 검증/안정화되면
- * NoteContext.tsx의 import를 다시 dataService로 바꾸면 됩니다.
+ * 모든 노트·치료사 데이터는 브라우저/Tauri WebView 의 localStorage 에 저장.
+ * 데스크톱 앱에서는 OS의 사용자 프로필 폴더에 영구 저장 (Tauri WebView2 storage).
  *
- *   변경 전:  import * as ds from "@/lib/localDataService";
- *   변경 후:  import * as ds from "@/lib/dataService";
+ * 데이터 키:
+ *   - pt_local_notes        : NoteData[]
+ *   - pt_local_therapists   : TherapistRecord[]
+ *   - pt_local_session      : { uid: string }  // 로그인 세션
+ *
+ * 기본 마스터 계정: id "master" / pw "0000" (앱 첫 실행 시 자동 생성)
+ *
+ * 클라우드 모드 복귀 시: 새 lib/dataService.ts 작성 + useNoteStore 의 import 변경
+ * (이전 클라우드 코드는 git history `14316af` 이전 커밋에서 참조 가능)
  */
 
 import type { NoteData, TherapistRecord, Therapist } from "@/types";
@@ -37,24 +44,22 @@ function write<T>(key: string, value: T) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
-let bootstrapped = false;
-
 async function ensureBootstrapMaster(): Promise<void> {
-  if (bootstrapped) return;
+  // 항상 실제 localStorage 를 확인. (모듈 캐시 사용 X — 외부에서
+  // localStorage 가 비워지는 경우에도 안전하게 마스터 재생성)
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
-  if (therapists.length === 0) {
-    const masterPwHash = await hashPassword(DEFAULT_MASTER_PW);
-    const master: TherapistRecord = {
-      uid: "master-default",
-      id: "master",
-      name: "마스터",
-      passwordHash: masterPwHash,
-      role: "master",
-      resigned: false,
-    };
-    write(THERAPISTS_KEY, [master]);
-  }
-  bootstrapped = true;
+  if (therapists.length > 0) return;
+
+  const masterPwHash = await hashPassword(DEFAULT_MASTER_PW);
+  const master: TherapistRecord = {
+    uid: "master-default",
+    id: "master",
+    name: "마스터",
+    passwordHash: masterPwHash,
+    role: "master",
+    resigned: false,
+  };
+  write(THERAPISTS_KEY, [master]);
 }
 
 /* ══════════════════════════════════════════

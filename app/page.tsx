@@ -4,8 +4,7 @@ import Sidebar from "@/components/Sidebar";
 import ProgressNoteForm from "@/components/ProgressNoteForm";
 import LoginModal from "@/components/LoginModal";
 import UpdateChecker from "@/components/UpdateChecker";
-// import DataMigrationModal from "@/components/DataMigrationModal"; // 클라우드 모드 전용
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNoteStore } from "@/store/useNoteStore";
 
@@ -16,8 +15,6 @@ function HomeContent() {
   const isLoading = isAuthLoading || isNoteLoading;
   const initSync = useNoteStore((s) => s.initSync);
   const checkLocalData = useNoteStore((s) => s.checkLocalData);
-  
-  const [showMigration, setShowMigration] = useState(false); // 클라우드 모드 전용
 
   useEffect(() => {
     checkLocalData();
@@ -54,9 +51,6 @@ function HomeContent() {
       <div className="w-full flex-1 overflow-y-auto relative bg-white scroll-smooth">
         <ProgressNoteForm />
       </div>
-
-      {/* 클라우드 모드 전용 — 마이그레이션 모달 */}
-      {/* {showMigration && <DataMigrationModal onClose={() => setShowMigration(false)} />} */}
 
       {/* Tauri 데스크톱 앱 전용 — 자동 업데이트 체커 (웹에서는 렌더 안 됨) */}
       <UpdateChecker />

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { TherapistRecord } from "@/types";
-import { X, UserPlus, Users, Trash2, AlertCircle, ShieldCheck } from "lucide-react";
+import { X, Users, Trash2, AlertCircle, ShieldCheck } from "lucide-react";
 
 interface TherapistManagementModalProps {
   onClose: () => void;
@@ -46,8 +46,8 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
       await registerTherapist(id, name.trim(), password);
       setRegisterSuccess(`${name} (${id}) 등록 완료!`);
       setName(""); setId(""); setPassword("");
-    } catch (err: any) {
-      setRegisterError(err.message || "등록 중 오류가 발생했습니다.");
+    } catch (err) {
+      setRegisterError((err as Error).message || "등록 중 오류가 발생했습니다.");
     } finally {
       setRegistering(false);
     }
@@ -66,8 +66,8 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
     try {
       await resignTherapist(resigningTherapist.uid);
       setResigningTherapist(null);
-    } catch (err: any) {
-      setResignError(err.message || "퇴사 처리 중 오류가 발생했습니다.");
+    } catch (err) {
+      setResignError((err as Error).message || "퇴사 처리 중 오류가 발생했습니다.");
     } finally {
       setResigning(false);
     }

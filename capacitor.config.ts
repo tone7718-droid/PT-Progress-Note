@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.ptprogressnote.app',
-  appName: '물리치료 Progress Note',
+  appName: 'PT-NOTE',
   webDir: 'out'
 };
 
