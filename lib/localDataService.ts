@@ -127,10 +127,27 @@ export async function reauthenticate(
    Notes CRUD
    ══════════════════════════════════════════ */
 
+/**
+ * 구버전 painAreas (string[]) 자동 정리.
+ * v0.1.3 이전에 저장된 노트는 painAreas 가 부위 ID 문자열 배열이었음.
+ * v0.1.4 부터는 PainEntry[] (view+region+painLevel) 구조라 형식이 다름.
+ * 호환 변환은 의학적으로 부정확해질 수 있어 그냥 비움 — 환자 본인이 다시 마킹.
+ */
+function sanitizePainAreas(note: NoteData): NoteData {
+  const arr = note.painAreas as unknown;
+  if (!Array.isArray(arr) || arr.length === 0) return note;
+  // 첫 항목이 객체가 아니면 (= 구버전 문자열) 비움
+  const first = arr[0];
+  if (typeof first === "string" || (first !== null && typeof first === "object" && !("region" in first))) {
+    return { ...note, painAreas: [] };
+  }
+  return note;
+}
+
 export async function fetchNotes(): Promise<NoteData[]> {
-  return read<NoteData[]>(NOTES_KEY, []).sort(
-    (a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
-  );
+  return read<NoteData[]>(NOTES_KEY, [])
+    .map(sanitizePainAreas)
+    .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
 }
 
 export async function upsertNote(note: NoteData): Promise<NoteData> {

@@ -14,6 +14,15 @@ export interface Therapist {
   role: "therapist" | "master";
 }
 
+export type PainView = "anterior" | "posterior";
+export type PainLevel = 1 | 2 | 3;
+
+export interface PainEntry {
+  view: PainView;
+  region: string; // 한글 부위명 (예: "우측 대흉근")
+  painLevel: PainLevel;
+}
+
 export interface NoteData {
   id: string;
   savedAt: string;
@@ -24,7 +33,7 @@ export interface NoteData {
   diagnosis: string;
   pmh: string;
   painScore: number | null;
-  painAreas: string[];
+  painAreas: PainEntry[];
   chiefComplaint: string;
   rom: { joint: string; measuredROM: string; normalRange: string }[];
   postural: string;
