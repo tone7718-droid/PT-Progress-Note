@@ -1,0 +1,90 @@
+/**
+ * 자동 임시 저장 (Draft) — 새 노트 작성 중에 5초마다 호출됨.
+ * 사용자가 실수로 [취소] / [새 노트 작성] 을 눌러도 마지막 5초 이내 작업 복구 가능.
+ *
+ * 저장 위치: localStorage["pt_draft_note"]
+ * 저장 데이터: NoteData (id, savedAt 제외) + draftSavedAt 타임스탬프
+ *
+ * 정상 저장 (저장 버튼) 시 → clearDraft() 호출하여 자동 정리됨.
+ */
+
+import type { NoteData } from "@/types";
+
+const DRAFT_KEY = "pt_draft_note";
+
+export type DraftNoteData = Omit<NoteData, "id" | "savedAt"> & {
+  draftSavedAt: string;
+};
+
+export function loadDraft(): DraftNoteData | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as DraftNoteData;
+  } catch {
+    return null;
+  }
+}
+
+export function saveDraft(data: Omit<NoteData, "id" | "savedAt">): void {
+  if (typeof window === "undefined") return;
+  try {
+    const draft: DraftNoteData = { ...data, draftSavedAt: new Date().toISOString() };
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // localStorage 쿼터 초과 등 — 조용히 실패
+  }
+}
+
+export function clearDraft(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** 폼이 "비어있지 않은지" 검사 (의미있는 내용이 있는지) */
+export function isNoteContentful(data: Partial<Omit<NoteData, "id" | "savedAt">>): boolean {
+  if (!data) return false;
+  if (data.patientName?.trim()) return true;
+  if (data.chartNo?.trim()) return true;
+  if (data.birthDate?.trim()) return true;
+  if (data.diagnosis?.trim()) return true;
+  if (data.pmh?.trim()) return true;
+  if (data.chiefComplaint?.trim()) return true;
+  if (data.postural?.trim()) return true;
+  if (data.palpation?.trim()) return true;
+  if (data.specialTest?.trim()) return true;
+  if (data.treatment?.trim()) return true;
+  if (data.homeExercise?.trim()) return true;
+  if (typeof data.painScore === "number") return true;
+  if (Array.isArray(data.painAreas) && data.painAreas.length > 0) return true;
+  if (Array.isArray(data.rom) && data.rom.some((r) => r.joint?.trim() || r.measuredROM?.trim())) return true;
+  return false;
+}
+
+/** "방금 전" / "5분 전" / "2시간 전" / "2026-05-03" */
+export function formatRelativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 30_000) return "방금 전";
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}초 전`;
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  try {
+    return new Date(iso).toLocaleString("ko-KR", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}

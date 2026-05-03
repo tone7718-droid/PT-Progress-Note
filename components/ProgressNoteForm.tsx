@@ -7,6 +7,8 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { EMPTY_NOTE, type NoteData, type Therapist } from "@/types";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas-pro";
+import { Save, X as XIcon, Clock } from "lucide-react";
+import { loadDraft, saveDraft, clearDraft, isNoteContentful, formatRelativeTime, type DraftNoteData } from "@/lib/draftNote";
 
 import { PatientInfoSection } from "./features/note-form/PatientInfoSection";
 import { ComplaintSection } from "./features/note-form/ComplaintSection";
@@ -34,6 +36,10 @@ export default function ProgressNoteForm() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [outputMenuOpen, setOutputMenuOpen] = useState(false);
 
+  // 자동 임시 저장
+  const [pendingDraft, setPendingDraft] = useState<DraftNoteData | null>(null);
+  const [autoSaveFlash, setAutoSaveFlash] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const outputMenuRef = useRef<HTMLDivElement>(null);
 
@@ -59,8 +65,17 @@ export default function ProgressNoteForm() {
       reset({ ...EMPTY_NOTE, noteDate: new Date().toISOString().split("T")[0], rom: [{ joint: "", measuredROM: "", normalRange: "" }] });
       setCurrentNoteId(null);
       setSavedTherapist(null);
+      // 새 노트 모드 → 임시 저장된 draft 가 있으면 복구 배너 표시
+      const d = loadDraft();
+      if (d && isNoteContentful(d)) {
+        setPendingDraft(d);
+      } else {
+        setPendingDraft(null);
+      }
       return;
     }
+    // 기존 노트 편집 모드 → draft 배너 숨김
+    setPendingDraft(null);
     const note = notes.find((n) => n.id === selectedNoteId);
     if (note) {
       const roms = note.rom && note.rom.length > 0 ? note.rom : [{ joint: "", measuredROM: "", normalRange: "" }];
@@ -69,6 +84,35 @@ export default function ProgressNoteForm() {
       setSavedTherapist(note.therapist ?? null);
     }
   }, [selectedNoteId, notes, reset]);
+
+  /* ── 자동 임시 저장 (5초 주기) ──
+     새 노트 작성 모드에서만 작동. 빈 폼은 저장 안 함.
+     [저장] 성공 시 clearDraft() 로 정리됨. */
+  useEffect(() => {
+    if (currentNoteId !== null) return; // 기존 노트 수정 중은 제외
+    const interval = window.setInterval(() => {
+      const data = methods.getValues();
+      if (!isNoteContentful(data)) return;
+      saveDraft(data);
+      setAutoSaveFlash(true);
+      window.setTimeout(() => setAutoSaveFlash(false), 1200);
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [currentNoteId, methods]);
+
+  const restoreDraft = () => {
+    if (!pendingDraft) return;
+    const { draftSavedAt: _omit, ...data } = pendingDraft;
+    void _omit;
+    const roms = data.rom && data.rom.length > 0 ? data.rom : [{ joint: "", measuredROM: "", normalRange: "" }];
+    reset({ ...EMPTY_NOTE, ...data, rom: roms });
+    setPendingDraft(null);
+  };
+
+  const discardDraft = () => {
+    clearDraft();
+    setPendingDraft(null);
+  };
 
   // 저장 로직
   const onSaveSubmit = async (data: NoteData) => {
@@ -100,6 +144,9 @@ export default function ProgressNoteForm() {
       const saved = await saveNote(formData, currentNoteId);
       setCurrentNoteId(saved.id);
       setShowSaved(true);
+      // 정상 저장 → 임시 저장 정리
+      clearDraft();
+      setPendingDraft(null);
       setTimeout(() => setShowSaved(false), 3000);
     } catch (err) {
       console.error("저장 실패:", err);
@@ -220,16 +267,58 @@ export default function ProgressNoteForm() {
               </div>
             </div>
 
-            <div className={`mb-8 flex justify-between items-center text-sm font-medium ${isGeneratingPdf ? 'hidden' : 'print:hidden'}`}>
-              {currentNoteId ? (
-                <span className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full shadow-sm ml-auto">
-                  기존 노트 수정 중: <span className="font-bold">{patientName || "(이름 없음)"}</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-50 text-green-800 border border-green-200 rounded-full shadow-sm ml-auto">
-                  ✨ 새 노트 작성
-                </span>
+            <div className={`mb-3 sm:mb-6 flex flex-col gap-2 ${isGeneratingPdf ? 'hidden' : 'print:hidden'}`}>
+              {/* 임시 저장 복구 배너 — 새 노트 모드에서 이전 작성 내용이 있을 때 */}
+              {pendingDraft && !currentNoteId && (
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-amber-50 border-2 border-amber-200 rounded-xl shadow-sm">
+                  <Clock size={16} className="text-amber-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-amber-900">이전에 작성하던 내용이 있어요</p>
+                    <p className="text-xs text-amber-700">자동 임시 저장됨 · {formatRelativeTime(pendingDraft.draftSavedAt)}</p>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={restoreDraft}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs sm:text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors"
+                    >
+                      <Save size={14} /> 불러오기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={discardDraft}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs sm:text-sm font-bold text-amber-700 hover:bg-amber-100 rounded-lg transition-colors"
+                      aria-label="임시 저장 삭제"
+                    >
+                      <XIcon size={14} />
+                    </button>
+                  </div>
+                </div>
               )}
+
+              <div className="flex items-center gap-2 text-sm font-medium">
+                {/* 자동 저장 표시 (새 노트 모드만) */}
+                {!currentNoteId && (
+                  <span
+                    className={`inline-flex items-center gap-1 text-xs font-bold transition-opacity duration-300 ${
+                      autoSaveFlash ? "text-blue-600 opacity-100" : "text-gray-400 opacity-70"
+                    }`}
+                    aria-live="polite"
+                  >
+                    <Clock size={12} />
+                    {autoSaveFlash ? "임시 저장됨" : "5초마다 자동 저장"}
+                  </span>
+                )}
+                {currentNoteId ? (
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full shadow-sm ml-auto text-xs sm:text-sm">
+                    기존 노트 수정 중: <span className="font-bold truncate max-w-[120px] sm:max-w-none">{patientName || "(이름 없음)"}</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-green-50 text-green-800 border border-green-200 rounded-full shadow-sm ml-auto text-xs sm:text-sm">
+                    ✨ 새 노트 작성
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className={`text-gray-800 ${isGeneratingPdf ? 'space-y-4' : 'space-y-5 sm:space-y-12 print:space-y-6'}`}>
