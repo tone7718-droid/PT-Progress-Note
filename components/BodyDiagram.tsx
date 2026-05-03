@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { RotateCcw } from "lucide-react";
 import type { PainEntry, PainLevel, PainView } from "@/types";
 
@@ -43,8 +43,8 @@ const ANT: Part[] = [
   { kind: "polygon", view: "anterior", name: "우측 대흉근", points: "246,150 180,150 160,220 246,230" },
   { kind: "polygon", view: "anterior", name: "좌측 대흉근", points: "254,150 320,150 340,220 254,230" },
   // Pectoralis minor (deep)
-  { kind: "polygon", view: "anterior", name: "우측 소흉근 (심부)", deep: true, points: "215,160 195,175 205,195" },
-  { kind: "polygon", view: "anterior", name: "좌측 소흉근 (심부)", deep: true, points: "285,160 305,175 295,195" },
+  { kind: "polygon", view: "anterior", name: "우측 소흉근 (심부)", deep: true, points: "220,158 188,178 215,210" },
+  { kind: "polygon", view: "anterior", name: "좌측 소흉근 (심부)", deep: true, points: "280,158 312,178 285,210" },
   // Deltoid (front + lateral)
   { kind: "polygon", view: "anterior", name: "우측 전면 삼각근", points: "180,150 160,160 145,230 160,220" },
   { kind: "polygon", view: "anterior", name: "우측 측면 삼각근", points: "160,160 140,170 130,240 145,230" },
@@ -244,6 +244,59 @@ function centerOf(p: Part): { x: number; y: number } | null {
   }
 }
 
+/** 한 점(SVG 좌표계)이 도형 내부에 있는지 검사 (path 는 근사 — 박스만) */
+function partContainsPoint(p: Part, x: number, y: number): boolean {
+  switch (p.kind) {
+    case "circle":
+      return (x - p.cx) ** 2 + (y - p.cy) ** 2 <= p.r ** 2;
+    case "ellipse": {
+      const dx = (x - p.cx) / p.rx;
+      const dy = (y - p.cy) / p.ry;
+      return dx * dx + dy * dy <= 1;
+    }
+    case "rect":
+      return x >= p.x && x <= p.x + p.width && y >= p.y && y <= p.y + p.height;
+    case "polygon": {
+      const c = p.points.split(/[\s,]+/).map(Number);
+      const n = c.length / 2;
+      let inside = false;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const xi = c[2 * i], yi = c[2 * i + 1];
+        const xj = c[2 * j], yj = c[2 * j + 1];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    }
+    case "path":
+      // 대둔근만 해당 — 사각형 박스로 근사
+      // path d 시작점 + 추출한 좌표들로 bbox 계산
+      // 간단하게 원점 0~500 ,0~950 안 어디든 false 처리 후 근접 polygon 우선
+      return false;
+  }
+}
+
+/** 주어진 view + SVG 좌표에서 가장 위에 있는 부위 찾기 */
+function findRegionAt(view: PainView, x: number, y: number): { region: string; group?: string } | null {
+  const parts = view === "anterior" ? ANT : POST;
+  // 뒤(나중에 그려진)에서부터 검사 — 겹쳐 있으면 위에 있는 게 잡힘
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    if (partContainsPoint(p, x, y)) {
+      return { region: p.name, group: p.group };
+    }
+  }
+  return null;
+}
+
+/** 클라이언트(viewport) 좌표 → SVG (0..500, 0..950) 좌표 변환 */
+function clientToSvg(svgEl: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } {
+  const rect = svgEl.getBoundingClientRect();
+  return {
+    x: ((clientX - rect.left) / rect.width) * 500,
+    y: ((clientY - rect.top) / rect.height) * 950,
+  };
+}
+
 /* ════════════════════════════════════════════════════════
    Component
    ════════════════════════════════════════════════════════ */
@@ -253,6 +306,21 @@ export type BodyDiagramProps = {
   onChange?: (entries: PainEntry[]) => void;
 };
 
+/* ─────────────────────────────────────────
+   Magnifier Lens (모바일 전용)
+   ───────────────────────────────────────── */
+type LensState = {
+  view: PainView;
+  /** 렌즈 viewBox 의 중심 SVG 좌표 (= 손가락 위치를 SVG 공간으로 변환한 값) */
+  centerX: number;
+  centerY: number;
+  /** 현재 인식된 부위 (렌즈 우측 상단에 표시) */
+  region: { region: string; group?: string } | null;
+};
+
+const LENS_PX = 260; // 렌즈 화면 표시 크기
+const LENS_RADIUS_SVG = 60; // SVG 좌표계에서 렌즈가 보여주는 반경 → 줌 배율 ≈ 260/(2*60) = 2.16x
+
 export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
   const [internal, setInternal] = useState<PainEntry[]>([]);
   const controlled = value !== undefined && onChange !== undefined;
@@ -260,6 +328,14 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
   const setEntries = controlled ? onChange! : setInternal;
 
   const levelMap = useMemo(() => buildLevelMap(entries), [entries]);
+
+  /* 모바일 돋보기 상태 */
+  const [lens, setLens] = useState<LensState | null>(null);
+  // 길게 누르기 감지용
+  const longPressTimer = useRef<number | null>(null);
+  const pressInfo = useRef<{ svgEl: SVGSVGElement; view: PainView; startClientX: number; startClientY: number } | null>(null);
+  // 손가락이 내려간 상태 (렌즈 열린 후 드래그 추적용)
+  const fingerDown = useRef(false);
 
   /* 0→1→2→3→0 사이클 토글 (그룹은 동시 토글) */
   const toggle = (view: PainView, region: string, group?: string) => {
@@ -284,6 +360,74 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
   /* 단일 부위 삭제 (요약 패널의 × 버튼) */
   const remove = (view: PainView, region: string) => {
     setEntries(entries.filter((e) => !(e.view === view && e.region === region)));
+  };
+
+  /* ── 모바일 돋보기 — 길게 누르기 감지 ── */
+  const startLongPress = (e: React.PointerEvent<SVGSVGElement>, view: PainView) => {
+    if (e.pointerType !== "touch") return; // 모바일(터치) 전용
+    if (lens) return; // 이미 렌즈 열려있으면 별도 처리
+    const svgEl = e.currentTarget;
+    pressInfo.current = { svgEl, view, startClientX: e.clientX, startClientY: e.clientY };
+    fingerDown.current = true;
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => {
+      if (!pressInfo.current) return;
+      const { svgEl, view, startClientX, startClientY } = pressInfo.current;
+      const { x, y } = clientToSvg(svgEl, startClientX, startClientY);
+      const region = findRegionAt(view, x, y);
+      setLens({ view, centerX: x, centerY: y, region });
+      longPressTimer.current = null;
+    }, 500);
+  };
+
+  const cancelLongPress = (e?: React.PointerEvent<SVGSVGElement>) => {
+    // 손가락이 너무 많이 움직이면 long-press 취소 (스크롤 의도)
+    if (!longPressTimer.current || !pressInfo.current) return;
+    if (e) {
+      const dx = e.clientX - pressInfo.current.startClientX;
+      const dy = e.clientY - pressInfo.current.startClientY;
+      if (Math.hypot(dx, dy) <= 12) return;
+    }
+    window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+  };
+
+  const endPress = () => {
+    fingerDown.current = false;
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    pressInfo.current = null;
+  };
+
+  /* 렌즈 열린 후: 손가락이 내려간 동안만 추적해서 부위 갱신 */
+  useEffect(() => {
+    if (!lens) return;
+    const onMove = (e: PointerEvent) => {
+      if (!fingerDown.current || !pressInfo.current) return;
+      const { svgEl, view } = pressInfo.current;
+      const { x, y } = clientToSvg(svgEl, e.clientX, e.clientY);
+      const region = findRegionAt(view, x, y);
+      setLens((prev) => prev ? { ...prev, view, centerX: x, centerY: y, region } : prev);
+    };
+    const onUp = () => {
+      fingerDown.current = false;
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+    };
+  }, [lens]);
+
+  /* 렌즈 안에서 탭 → 통증 단계 사이클 */
+  const lensTap = () => {
+    if (!lens || !lens.region) return;
+    toggle(lens.view, lens.region.region, lens.region.group);
   };
 
   /* 전체 초기화 */
@@ -365,9 +509,77 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
 
       {/* Two diagrams */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <DiagramSvg view="anterior" parts={ANT} levelMap={levelMap} onToggle={toggle} />
-        <DiagramSvg view="posterior" parts={POST} levelMap={levelMap} onToggle={toggle} />
+        <DiagramSvg
+          view="anterior" parts={ANT} levelMap={levelMap} onToggle={toggle}
+          onLongPressStart={(e) => startLongPress(e, "anterior")}
+          onLongPressMove={cancelLongPress}
+          onLongPressEnd={endPress}
+        />
+        <DiagramSvg
+          view="posterior" parts={POST} levelMap={levelMap} onToggle={toggle}
+          onLongPressStart={(e) => startLongPress(e, "posterior")}
+          onLongPressMove={cancelLongPress}
+          onLongPressEnd={endPress}
+        />
       </div>
+
+      {/* 모바일 돋보기 (Magnifier Lens) */}
+      {lens && (
+        <>
+          {/* Backdrop — 바깥 탭 시 렌즈 닫기 */}
+          <div
+            className="fixed inset-0 bg-black/30 z-[100]"
+            onClick={() => setLens(null)}
+            aria-label="돋보기 닫기"
+          />
+          {/* Lens */}
+          <div
+            className="fixed z-[110] bg-white rounded-full shadow-2xl border-4 border-slate-200 overflow-hidden flex flex-col items-center"
+            style={{
+              width: LENS_PX,
+              height: LENS_PX,
+              left: `calc(50vw - ${LENS_PX / 2}px)`,
+              top: `calc(50vh - ${LENS_PX / 2}px)`,
+            }}
+            onClick={(e) => { e.stopPropagation(); lensTap(); }}
+          >
+            <svg
+              viewBox={`${lens.centerX - LENS_RADIUS_SVG} ${lens.centerY - LENS_RADIUS_SVG} ${LENS_RADIUS_SVG * 2} ${LENS_RADIUS_SVG * 2}`}
+              width={LENS_PX}
+              height={LENS_PX}
+              style={{ pointerEvents: "none" }}
+              aria-hidden
+            >
+              {(lens.view === "anterior" ? ANT : POST).map((p, i) => {
+                const level = levelMap.get(keyOf(p.view, p.name));
+                const fill = level ? SEVERITY[level].fill : (p.deep ? "rgba(203,213,225,0.5)" : "#e2e8f0");
+                const stroke = level ? SEVERITY[level].stroke : (p.deep ? "#475569" : "#64748b");
+                const isCurrent = lens.region?.region === p.name;
+                const sw = isCurrent ? 5 : (level ? 3 + level * 0.5 : 2);
+                const dashArray = !level && p.deep ? "4,3" : undefined;
+                const common = { fill, stroke, strokeWidth: sw, strokeDasharray: dashArray, strokeLinejoin: "round" as const };
+                switch (p.kind) {
+                  case "circle": return <circle key={i} cx={p.cx} cy={p.cy} r={p.r} {...common} />;
+                  case "ellipse": return <ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} {...common} />;
+                  case "rect": return <rect key={i} x={p.x} y={p.y} width={p.width} height={p.height} rx={p.rx} {...common} />;
+                  case "polygon": return <polygon key={i} points={p.points} {...common} />;
+                  case "path": return <path key={i} d={p.d} fillRule={p.fillRule} {...common} />;
+                }
+              })}
+              {/* 현재 손가락 위치 표시 — 작은 십자선 */}
+              <circle cx={lens.centerX} cy={lens.centerY} r={3} fill="#2563eb" pointerEvents="none" />
+            </svg>
+            {/* 부위 이름 표시 (상단) */}
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-slate-900 text-white text-xs font-bold rounded-full shadow-md whitespace-nowrap pointer-events-none max-w-[230px] truncate">
+              {lens.region?.region || "—"}
+            </div>
+            {/* 안내 (하단) */}
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-full shadow pointer-events-none">
+              탭 → 단계 변경 · 바깥 탭 → 닫기
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Summary list */}
       {sorted.length > 0 && (
@@ -423,11 +635,17 @@ function DiagramSvg({
   parts,
   levelMap,
   onToggle,
+  onLongPressStart,
+  onLongPressMove,
+  onLongPressEnd,
 }: {
   view: PainView;
   parts: Part[];
   levelMap: Map<string, PainLevel>;
   onToggle: (view: PainView, region: string, group?: string) => void;
+  onLongPressStart?: (e: React.PointerEvent<SVGSVGElement>) => void;
+  onLongPressMove?: (e: React.PointerEvent<SVGSVGElement>) => void;
+  onLongPressEnd?: () => void;
 }) {
   const title = view === "anterior" ? "전면 (Anterior)" : "후면 (Posterior)";
   const lr = view === "anterior"
@@ -449,8 +667,13 @@ function DiagramSvg({
       strokeDasharray: dashArray,
       strokeLinejoin: "round" as const,
       strokeLinecap: "round" as const,
-      style: { cursor: "pointer" as const, transition: "fill 0.15s ease, stroke 0.15s ease, stroke-width 0.15s ease" },
-      onClick: (e: React.MouseEvent) => { e.preventDefault(); onToggle(p.view, p.name, p.group); },
+      style: { cursor: "pointer" as const, outline: "none" as const, transition: "fill 0.15s ease, stroke 0.15s ease, stroke-width 0.15s ease" },
+      onClick: (e: React.MouseEvent<SVGElement>) => {
+        e.preventDefault();
+        onToggle(p.view, p.name, p.group);
+        // 클릭 후 포커스 사각형(브라우저 기본) 제거
+        (e.currentTarget as SVGElement & { blur?: () => void }).blur?.();
+      },
       onKeyDown: (e: React.KeyboardEvent) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -480,7 +703,16 @@ function DiagramSvg({
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 relative overflow-hidden flex flex-col items-center">
       <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-1 self-start ml-2">{title}</h2>
-      <svg viewBox="0 0 500 950" className="w-full h-auto max-h-[70vh]" aria-label={title} role="img">
+      <svg
+        viewBox="0 0 500 950"
+        className="w-full h-auto max-h-[70vh]"
+        aria-label={title}
+        role="img"
+        onPointerDown={onLongPressStart}
+        onPointerMove={onLongPressMove}
+        onPointerUp={onLongPressEnd}
+        onPointerCancel={onLongPressEnd}
+      >
         <line x1={250} y1={0} x2={250} y2={950} stroke="#f1f5f9" strokeWidth={2} strokeDasharray="8,8" />
         <text x={50} y={25} fontSize={12} fontWeight={700} fill="#94a3b8" letterSpacing={1}>{lr.left}</text>
         <text x={360} y={25} fontSize={12} fontWeight={700} fill="#94a3b8" letterSpacing={1}>{lr.right}</text>

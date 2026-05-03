@@ -2,7 +2,7 @@ import * as React from "react";
 import { useFormContext } from "react-hook-form";
 import type { NoteData } from "@/types";
 import { Card } from "@/components/ui/Card";
-import { Textarea } from "@/components/ui/Textarea";
+import { SmartTextarea } from "@/components/SmartTextarea";
 
 export function ComplaintSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
   const { register } = useFormContext<NoteData>();
@@ -15,9 +15,9 @@ export function ComplaintSection({ isGeneratingPdf }: { isGeneratingPdf: boolean
     <Card isPdfMode={isGeneratingPdf}>
       <h2 className={sectionTitleCls}>2. 주호소 및 발병 시기 (Chief Complaint &amp; Onset)</h2>
       <label htmlFor="chiefComplaint" className="sr-only">주호소 및 발병 시기</label>
-      <Textarea 
-        id="chiefComplaint" 
-        isPdfMode={isGeneratingPdf} 
+      <SmartTextarea
+        id="chiefComplaint"
+        isPdfMode={isGeneratingPdf}
         placeholder="증상 및 발생 시기 입력..."
         {...register("chiefComplaint")}
       />

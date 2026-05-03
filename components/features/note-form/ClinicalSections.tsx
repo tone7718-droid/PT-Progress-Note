@@ -2,7 +2,7 @@ import * as React from "react";
 import { useFormContext } from "react-hook-form";
 import type { NoteData } from "@/types";
 import { Card } from "@/components/ui/Card";
-import { Textarea } from "@/components/ui/Textarea";
+import { SmartTextarea } from "@/components/SmartTextarea";
 
 const clinicalSections = [
   { num: "5", key: "postural",    title: "자세 분석 (Postural Observation)",     placeholder: "거북목, 골반 틀어짐 (Anterior Pelvic Tilt 등) 관찰 사항 기록..." },
@@ -25,9 +25,9 @@ export function ClinicalSections({ isGeneratingPdf }: { isGeneratingPdf: boolean
         <Card key={sec.num} isPdfMode={isGeneratingPdf}>
           <h2 className={sectionTitleCls}>{sec.num}. {sec.title}</h2>
           <label htmlFor={`clinical-${sec.key}`} className="sr-only">{sec.title}</label>
-          <Textarea 
-            id={`clinical-${sec.key}`} 
-            isPdfMode={isGeneratingPdf} 
+          <SmartTextarea
+            id={`clinical-${sec.key}`}
+            isPdfMode={isGeneratingPdf}
             placeholder={sec.placeholder}
             {...register(sec.key as keyof NoteData)}
           />
