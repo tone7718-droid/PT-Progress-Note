@@ -124,24 +124,38 @@ export default function ProgressNoteForm() {
     setTimeout(async () => {
       try {
         const canvas = await html2canvas(containerRef.current!, {
-          scale: 2,
+          scale: 1.5,
           useCORS: true,
           windowWidth: 800,
-          backgroundColor: "#ffffff"
+          backgroundColor: "#ffffff",
         });
 
-        const imgData = canvas.toDataURL("image/png");
+        // JPEG 0.85 → PNG 대비 약 1/10 용량 (의무기록 가독성에는 충분)
+        const imgData = canvas.toDataURL("image/jpeg", 0.85);
+
         const pdf = new jsPDF("p", "mm", "a4");
-        
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        pdf.addImage(imgData, "PNG", 0, 10, pdfWidth, pdfHeight);
-        
+        const pageWidth = pdf.internal.pageSize.getWidth();   // 210mm
+        const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
+        // 캔버스를 A4 폭에 맞췄을 때 총 높이 (mm)
+        const imgTotalHeight = (canvas.height * pageWidth) / canvas.width;
+
+        // 한 페이지에 들어갈 만큼만 보이고 나머지는 다음 페이지로
+        let heightLeft = imgTotalHeight;
+        let position = 0;
+        pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgTotalHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+          position -= pageHeight; // 이미지를 위로 스크롤
+          pdf.addPage();
+          pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgTotalHeight);
+          heightLeft -= pageHeight;
+        }
+
         const dateStr = noteDate ? noteDate.replace(/-/g, "") : "날짜없음";
         const nameStr = patientName || "이름없음";
         const fileName = `환자평가지_${nameStr}_${dateStr}.pdf`;
-        
+
         pdf.save(fileName);
       } catch (error) {
         console.error("PDF 생성 실패:", error);
