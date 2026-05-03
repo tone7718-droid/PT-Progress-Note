@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { EMPTY_NOTE, type NoteData, type Therapist } from "@/types";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas-pro";
-import { Save, X as XIcon, Clock } from "lucide-react";
+import { Save, X as XIcon, Clock, Copy } from "lucide-react";
 import { loadDraft, saveDraft, clearDraft, isNoteContentful, formatRelativeTime, type DraftNoteData } from "@/lib/draftNote";
 
 import { PatientInfoSection } from "./features/note-form/PatientInfoSection";
@@ -20,6 +20,7 @@ export default function ProgressNoteForm() {
   const selectedNoteId = useNoteStore((s) => s.selectedNoteId);
   const notes = useNoteStore((s) => s.notes);
   const saveNote = useNoteStore((s) => s.saveNote);
+  const selectNote = useNoteStore((s) => s.selectNote);
   const therapist = useAuthStore((s) => s.therapist);
 
   const methods = useForm<NoteData>({
@@ -39,6 +40,10 @@ export default function ProgressNoteForm() {
   // 자동 임시 저장
   const [pendingDraft, setPendingDraft] = useState<DraftNoteData | null>(null);
   const [autoSaveFlash, setAutoSaveFlash] = useState(false);
+
+  // 노트 복사 (이 노트를 베이스로 새 노트 시작)
+  const pendingCopyRef = useRef<NoteData | null>(null);
+  const [copyFlash, setCopyFlash] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const outputMenuRef = useRef<HTMLDivElement>(null);
@@ -62,10 +67,22 @@ export default function ProgressNoteForm() {
   // selectedNoteId 변경 시 폼 데이터 로드 또는 리셋
   useEffect(() => {
     if (selectedNoteId === null) {
+      // [복사 모드] — 이 노트 복사하여 새 노트 시작 으로 진입한 경우
+      if (pendingCopyRef.current) {
+        const src = pendingCopyRef.current;
+        pendingCopyRef.current = null;
+        const roms = src.rom && src.rom.length > 0 ? src.rom : [{ joint: "", measuredROM: "", normalRange: "" }];
+        reset({ ...src, rom: roms });
+        setCurrentNoteId(null);
+        setSavedTherapist(null);
+        setPendingDraft(null); // 복구 배너 숨김 — 방금 복사 데이터로 채웠으니 draft 와 무관
+        return;
+      }
+      // [일반 새 노트 모드]
       reset({ ...EMPTY_NOTE, noteDate: new Date().toISOString().split("T")[0], rom: [{ joint: "", measuredROM: "", normalRange: "" }] });
       setCurrentNoteId(null);
       setSavedTherapist(null);
-      // 새 노트 모드 → 임시 저장된 draft 가 있으면 복구 배너 표시
+      // 임시 저장된 draft 가 있으면 복구 배너 표시
       const d = loadDraft();
       if (d && isNoteContentful(d)) {
         setPendingDraft(d);
@@ -112,6 +129,22 @@ export default function ProgressNoteForm() {
   const discardDraft = () => {
     clearDraft();
     setPendingDraft(null);
+  };
+
+  /* 현재 보고 있는 기존 노트를 베이스로 새 노트 시작 */
+  const handleCopyToNewNote = () => {
+    const current = methods.getValues();
+    pendingCopyRef.current = {
+      ...current,
+      id: "",
+      savedAt: "",
+      noteDate: new Date().toISOString().split("T")[0],
+      therapist: therapist || null,
+      therapistUid: therapist?.uid || "",
+    };
+    selectNote(null); // 새 노트 모드 진입 → useEffect 가 pendingCopyRef 감지하고 복사 데이터로 reset
+    setCopyFlash(true);
+    setTimeout(() => setCopyFlash(false), 3000);
   };
 
   // 저장 로직
@@ -310,12 +343,26 @@ export default function ProgressNoteForm() {
                   </span>
                 )}
                 {currentNoteId ? (
-                  <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full shadow-sm ml-auto text-xs sm:text-sm">
-                    기존 노트 수정 중: <span className="font-bold truncate max-w-[120px] sm:max-w-none">{patientName || "(이름 없음)"}</span>
-                  </span>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <button
+                      type="button"
+                      onClick={handleCopyToNewNote}
+                      className="inline-flex items-center gap-1 sm:gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-full shadow-sm text-xs sm:text-sm font-bold transition-colors"
+                      title="이 노트를 베이스로 새 노트 시작 (환자정보·치료내용 모두 복사)"
+                    >
+                      <Copy size={14} />
+                      <span className="hidden sm:inline">복사하여 새 노트</span>
+                      <span className="sm:hidden">복사</span>
+                    </button>
+                    <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full shadow-sm text-xs sm:text-sm">
+                      <span className="hidden sm:inline">기존 노트 수정 중:</span>
+                      <span className="sm:hidden">수정 중:</span>
+                      <span className="font-bold truncate max-w-[80px] sm:max-w-none">{patientName || "(이름 없음)"}</span>
+                    </span>
+                  </div>
                 ) : (
                   <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-green-50 text-green-800 border border-green-200 rounded-full shadow-sm ml-auto text-xs sm:text-sm">
-                    ✨ 새 노트 작성
+                    {copyFlash ? "📋 노트 복사 완료 — 환자/내용 수정 후 저장" : "✨ 새 노트 작성"}
                   </span>
                 )}
               </div>
