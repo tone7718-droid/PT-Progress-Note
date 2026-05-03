@@ -314,12 +314,16 @@ type LensState = {
   /** 렌즈 viewBox 의 중심 SVG 좌표 (= 손가락 위치를 SVG 공간으로 변환한 값) */
   centerX: number;
   centerY: number;
+  /** 손가락 viewport 위치 — 렌즈 자체의 화면 위치 계산용 */
+  clientX: number;
+  clientY: number;
   /** 현재 인식된 부위 (렌즈 우측 상단에 표시) */
   region: { region: string; group?: string } | null;
 };
 
-const LENS_PX = 260; // 렌즈 화면 표시 크기
-const LENS_RADIUS_SVG = 60; // SVG 좌표계에서 렌즈가 보여주는 반경 → 줌 배율 ≈ 260/(2*60) = 2.16x
+const LENS_PX = 240; // 렌즈 화면 표시 크기
+const LENS_RADIUS_SVG = 90; // SVG 좌표계 반경 → 줌 배율 ≈ 240/180 ≈ 1.33x (작고 부드러움)
+const LENS_OFFSET_Y = -180; // 렌즈를 손가락 위쪽으로 띄우는 거리 (손가락이 렌즈 가리지 않게)
 
 export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
   const [internal, setInternal] = useState<PainEntry[]>([]);
@@ -375,7 +379,7 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
       const { svgEl, view, startClientX, startClientY } = pressInfo.current;
       const { x, y } = clientToSvg(svgEl, startClientX, startClientY);
       const region = findRegionAt(view, x, y);
-      setLens({ view, centerX: x, centerY: y, region });
+      setLens({ view, centerX: x, centerY: y, clientX: startClientX, clientY: startClientY, region });
       longPressTimer.current = null;
     }, 500);
   };
@@ -401,7 +405,7 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
     pressInfo.current = null;
   };
 
-  /* 렌즈 열린 후: 손가락이 내려간 동안만 추적해서 부위 갱신 */
+  /* 렌즈 열린 후: 손가락이 내려간 동안 추적해서 부위 + 위치 갱신 */
   useEffect(() => {
     if (!lens) return;
     const onMove = (e: PointerEvent) => {
@@ -409,7 +413,9 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
       const { svgEl, view } = pressInfo.current;
       const { x, y } = clientToSvg(svgEl, e.clientX, e.clientY);
       const region = findRegionAt(view, x, y);
-      setLens((prev) => prev ? { ...prev, view, centerX: x, centerY: y, region } : prev);
+      setLens((prev) => prev
+        ? { ...prev, view, centerX: x, centerY: y, clientX: e.clientX, clientY: e.clientY, region }
+        : prev);
     };
     const onUp = () => {
       fingerDown.current = false;
@@ -524,7 +530,18 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
       </div>
 
       {/* 모바일 돋보기 (Magnifier Lens) */}
-      {lens && (
+      {lens && (() => {
+        // 렌즈 화면 위치 — 손가락 위쪽으로 띄우고, 화면 밖으로 안 나가도록 클램프
+        const vw = typeof window !== "undefined" ? window.innerWidth : 360;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 640;
+        const margin = 8;
+        let left = lens.clientX - LENS_PX / 2;
+        left = Math.max(margin, Math.min(vw - LENS_PX - margin, left));
+        // 우선 위쪽에 시도, 잘리면 아래쪽으로
+        let top = lens.clientY + LENS_OFFSET_Y;
+        if (top < margin) top = lens.clientY + 30; // 화면 위쪽 끝에 가까우면 손가락 아래쪽에 표시
+        top = Math.min(vh - LENS_PX - margin, Math.max(margin, top));
+        return (
         <>
           {/* Backdrop — 바깥 탭 시 렌즈 닫기 */}
           <div
@@ -534,12 +551,12 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
           />
           {/* Lens */}
           <div
-            className="fixed z-[110] bg-white rounded-full shadow-2xl border-4 border-slate-200 overflow-hidden flex flex-col items-center"
+            className="fixed z-[110] bg-white rounded-full shadow-2xl border-4 border-slate-200 overflow-hidden flex flex-col items-center transition-[left,top] duration-75 ease-out"
             style={{
               width: LENS_PX,
               height: LENS_PX,
-              left: `calc(50vw - ${LENS_PX / 2}px)`,
-              top: `calc(50vh - ${LENS_PX / 2}px)`,
+              left,
+              top,
             }}
             onClick={(e) => { e.stopPropagation(); lensTap(); }}
           >
@@ -579,7 +596,8 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
             </div>
           </div>
         </>
-      )}
+        );
+      })()}
 
       {/* Summary list */}
       {sorted.length > 0 && (

@@ -41,13 +41,29 @@ export default function MacroManagementModal({ onClose }: MacroManagementModalPr
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* 헤더 */}
-        <div className="px-6 py-4 sm:px-8 sm:py-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <h2 className="text-lg sm:text-2xl font-black text-gray-900 flex items-center gap-2">
-            <Sparkles className="text-blue-600" size={24} /> 매크로 관리 (/도수1~20)
+        <div className="px-4 py-3 sm:px-8 sm:py-6 border-b border-gray-100 flex items-center justify-between gap-2 bg-gray-50/50">
+          <h2 className="text-sm sm:text-2xl font-black text-gray-900 flex items-center gap-2 min-w-0">
+            <Sparkles className="text-blue-600 shrink-0" size={20} />
+            <span className="truncate">매크로 관리 (/도수1~20)</span>
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors" aria-label="모달 닫기">
-            <X size={22} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {savedFlash && (
+              <span className="text-green-600 text-xs sm:text-sm font-bold animate-in fade-in duration-200">
+                ✓ 저장됨
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              className="flex items-center gap-1 sm:gap-2 px-3 py-2 sm:px-5 text-xs sm:text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg sm:rounded-xl shadow-md transition-colors"
+              aria-label="매크로 저장"
+            >
+              <Save size={14} /> 저장
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors" aria-label="모달 닫기">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* 안내 */}
