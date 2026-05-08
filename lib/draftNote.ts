@@ -68,6 +68,19 @@ export function isNoteContentful(data: Partial<Omit<NoteData, "id" | "savedAt">>
   return false;
 }
 
+/** "14:32:05" 형태의 절대 시각 — 자동저장 표시줄용 */
+export function formatClockTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  } catch {
+    return "--:--:--";
+  }
+}
+
 /** "방금 전" / "5분 전" / "2시간 전" / "2026-05-03" */
 export function formatRelativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

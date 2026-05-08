@@ -8,7 +8,7 @@ import { EMPTY_NOTE, type NoteData, type Therapist } from "@/types";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas-pro";
 import { Save, X as XIcon, Clock, Copy } from "lucide-react";
-import { loadDraft, saveDraft, clearDraft, isNoteContentful, formatRelativeTime, type DraftNoteData } from "@/lib/draftNote";
+import { loadDraft, saveDraft, clearDraft, isNoteContentful, formatRelativeTime, formatClockTime, type DraftNoteData } from "@/lib/draftNote";
 
 import { PatientInfoSection } from "./features/note-form/PatientInfoSection";
 import { ComplaintSection } from "./features/note-form/ComplaintSection";
@@ -40,6 +40,7 @@ export default function ProgressNoteForm() {
   // 자동 임시 저장
   const [pendingDraft, setPendingDraft] = useState<DraftNoteData | null>(null);
   const [autoSaveFlash, setAutoSaveFlash] = useState(false);
+  const [lastDraftAt, setLastDraftAt] = useState<string | null>(null);
 
   // 노트 복사 (이 노트를 베이스로 새 노트 시작)
   const pendingCopyRef = useRef<NoteData | null>(null);
@@ -89,10 +90,12 @@ export default function ProgressNoteForm() {
       } else {
         setPendingDraft(null);
       }
+      setLastDraftAt(null);
       return;
     }
     // 기존 노트 편집 모드 → draft 배너 숨김
     setPendingDraft(null);
+    setLastDraftAt(null);
     const note = notes.find((n) => n.id === selectedNoteId);
     if (note) {
       const roms = note.rom && note.rom.length > 0 ? note.rom : [{ joint: "", measuredROM: "", normalRange: "" }];
@@ -111,6 +114,7 @@ export default function ProgressNoteForm() {
       const data = methods.getValues();
       if (!isNoteContentful(data)) return;
       saveDraft(data);
+      setLastDraftAt(new Date().toISOString());
       setAutoSaveFlash(true);
       window.setTimeout(() => setAutoSaveFlash(false), 1200);
     }, 5000);
@@ -180,6 +184,7 @@ export default function ProgressNoteForm() {
       // 정상 저장 → 임시 저장 정리
       clearDraft();
       setPendingDraft(null);
+      setLastDraftAt(null);
       setTimeout(() => setShowSaved(false), 3000);
     } catch (err) {
       console.error("저장 실패:", err);
@@ -200,6 +205,12 @@ export default function ProgressNoteForm() {
   const handleDownloadPDF = async () => {
     if (!containerRef.current) return;
     setIsGeneratingPdf(true);
+
+    /* 다크 모드일 때 PDF가 어둡게 캡처되지 않도록 캡처 직전 dark 클래스 일시 제거.
+       finally 에서 원복. */
+    const html = document.documentElement;
+    const wasDark = html.classList.contains("dark");
+    if (wasDark) html.classList.remove("dark");
 
     setTimeout(async () => {
       try {
@@ -241,6 +252,7 @@ export default function ProgressNoteForm() {
         console.error("PDF 생성 실패:", error);
         alert("PDF 생성에 실패했습니다.");
       } finally {
+        if (wasDark) html.classList.add("dark");
         setIsGeneratingPdf(false);
       }
     }, 150);
@@ -254,14 +266,14 @@ export default function ProgressNoteForm() {
         <div 
           className={isGeneratingPdf
             ? "bg-white p-0 m-0 text-black w-[800px] overflow-hidden"
-            : "max-w-5xl mx-auto px-3 sm:px-10 py-5 sm:py-10 bg-gray-50/30 min-h-full pb-32 sm:pb-48 scroll-smooth print:bg-white print:p-0 print:m-0 print:pb-0"
+            : "max-w-5xl mx-auto px-3 sm:px-10 py-5 sm:py-10 bg-gray-50/30 dark:bg-transparent min-h-full pb-32 sm:pb-48 scroll-smooth print:bg-white print:p-0 print:m-0 print:pb-0"
           }
         >
           <div ref={containerRef} className={isGeneratingPdf ? "bg-white px-8 py-10" : "w-full h-full"}>
             
             {/* 타이틀 & 버튼 */}
-            <div className={`relative pb-3 sm:pb-6 border-b-2 ${isGeneratingPdf ? 'border-gray-800 mb-6' : 'border-gray-200 mb-5 sm:mb-10 print:border-transparent print:mb-6 print:pb-2'}`}>
-              <h1 className={`font-extrabold text-center tracking-tight ${isGeneratingPdf ? 'text-3xl text-black' : 'text-xl sm:text-4xl text-gray-900 print:text-3xl print:text-left print:border-b-4 print:border-gray-800 print:pb-4'}`}>
+            <div className={`relative pb-3 sm:pb-6 border-b-2 ${isGeneratingPdf ? 'border-gray-800 mb-6' : 'border-gray-200 dark:border-slate-800 mb-5 sm:mb-10 print:border-transparent print:mb-6 print:pb-2'}`}>
+              <h1 className={`font-extrabold text-center tracking-tight ${isGeneratingPdf ? 'text-3xl text-black' : 'text-xl sm:text-4xl text-gray-900 dark:text-gray-100 print:text-3xl print:text-left print:border-b-4 print:border-gray-800 print:pb-4'}`}>
                 물리치료 환자 평가지
               </h1>
               
@@ -278,12 +290,12 @@ export default function ProgressNoteForm() {
                   <span className={`text-xs transition-transform ${outputMenuOpen ? 'rotate-180' : ''}`}>▾</span>
                 </button>
                 {outputMenuOpen && (
-                  <div role="menu" className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-150">
+                  <div role="menu" className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-150">
                     <button
                       type="button"
                       role="menuitem"
                       onClick={() => { setOutputMenuOpen(false); handleDownloadPDF(); }}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 hover:bg-blue-50 font-bold transition-colors"
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-bold transition-colors"
                     >
                       <span>📄</span> PDF로 저장
                     </button>
@@ -291,7 +303,7 @@ export default function ProgressNoteForm() {
                       type="button"
                       role="menuitem"
                       onClick={() => { setOutputMenuOpen(false); window.print(); }}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 hover:bg-blue-50 font-bold border-t border-gray-100 transition-colors"
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-bold border-t border-gray-100 dark:border-slate-700 transition-colors"
                     >
                       <span>🖨️</span> 인쇄
                     </button>
@@ -303,11 +315,11 @@ export default function ProgressNoteForm() {
             <div className={`mb-3 sm:mb-6 flex flex-col gap-2 ${isGeneratingPdf ? 'hidden' : 'print:hidden'}`}>
               {/* 임시 저장 복구 배너 — 새 노트 모드에서 이전 작성 내용이 있을 때 */}
               {pendingDraft && !currentNoteId && (
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-amber-50 border-2 border-amber-200 rounded-xl shadow-sm">
-                  <Clock size={16} className="text-amber-600 shrink-0" />
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800 rounded-xl shadow-sm">
+                  <Clock size={16} className="text-amber-600 dark:text-amber-300 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-amber-900">이전에 작성하던 내용이 있어요</p>
-                    <p className="text-xs text-amber-700">자동 임시 저장됨 · {formatRelativeTime(pendingDraft.draftSavedAt)}</p>
+                    <p className="text-sm font-bold text-amber-900 dark:text-amber-100">이전에 작성하던 내용이 있어요</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-300">자동 임시 저장됨 · {formatRelativeTime(pendingDraft.draftSavedAt)}</p>
                   </div>
                   <div className="flex gap-1.5 shrink-0">
                     <button
@@ -320,7 +332,7 @@ export default function ProgressNoteForm() {
                     <button
                       type="button"
                       onClick={discardDraft}
-                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs sm:text-sm font-bold text-amber-700 hover:bg-amber-100 rounded-lg transition-colors"
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
                       aria-label="임시 저장 삭제"
                     >
                       <XIcon size={14} />
@@ -333,13 +345,15 @@ export default function ProgressNoteForm() {
                 {/* 자동 저장 표시 (새 노트 모드만) */}
                 {!currentNoteId && (
                   <span
-                    className={`inline-flex items-center gap-1 text-xs font-bold transition-opacity duration-300 ${
-                      autoSaveFlash ? "text-blue-600 opacity-100" : "text-gray-400 opacity-70"
+                    className={`inline-flex items-center gap-1 text-xs font-bold transition-colors duration-300 ${
+                      autoSaveFlash ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-gray-500"
                     }`}
                     aria-live="polite"
                   >
                     <Clock size={12} />
-                    {autoSaveFlash ? "임시 저장됨" : "5초마다 자동 저장"}
+                    {lastDraftAt
+                      ? `마지막 임시 저장 ${formatClockTime(lastDraftAt)}`
+                      : "5초마다 자동 저장"}
                   </span>
                 )}
                 {currentNoteId ? (
@@ -347,21 +361,21 @@ export default function ProgressNoteForm() {
                     <button
                       type="button"
                       onClick={handleCopyToNewNote}
-                      className="inline-flex items-center gap-1 sm:gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-full shadow-sm text-xs sm:text-sm font-bold transition-colors"
+                      className="inline-flex items-center gap-1 sm:gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800 rounded-full shadow-sm text-xs sm:text-sm font-bold transition-colors"
                       title="이 노트를 베이스로 새 노트 시작 (환자정보·치료내용 모두 복사)"
                     >
                       <Copy size={14} />
                       <span className="hidden sm:inline">복사하여 새 노트</span>
                       <span className="sm:hidden">복사</span>
                     </button>
-                    <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full shadow-sm text-xs sm:text-sm">
+                    <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 rounded-full shadow-sm text-xs sm:text-sm">
                       <span className="hidden sm:inline">기존 노트 수정 중:</span>
                       <span className="sm:hidden">수정 중:</span>
                       <span className="font-bold truncate max-w-[80px] sm:max-w-none">{patientName || "(이름 없음)"}</span>
                     </span>
                   </div>
                 ) : (
-                  <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-green-50 text-green-800 border border-green-200 rounded-full shadow-sm ml-auto text-xs sm:text-sm">
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 rounded-full shadow-sm ml-auto text-xs sm:text-sm">
                     {copyFlash ? "📋 노트 복사 완료 — 환자/내용 수정 후 저장" : "✨ 새 노트 작성"}
                   </span>
                 )}
@@ -377,33 +391,33 @@ export default function ProgressNoteForm() {
             </div>
 
             {/* 서명 & 날짜 하단 배치 */}
-            <div className={`${isGeneratingPdf ? 'mt-8 border-t-2 border-dashed border-gray-300 pt-6 flex flex-col items-end gap-2' : 'pt-8 pb-10 mt-12 flex flex-col items-end gap-6 bg-white p-8 rounded-3xl shadow-sm border border-gray-200 print:border-none print:shadow-none print:p-0 print:mt-10 print:break-inside-avoid'}`}>
+            <div className={`${isGeneratingPdf ? 'mt-8 border-t-2 border-dashed border-gray-300 pt-6 flex flex-col items-end gap-2' : 'pt-8 pb-10 mt-12 flex flex-col items-end gap-6 bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-gray-200 dark:border-slate-800 print:border-none print:shadow-none print:p-0 print:mt-10 print:break-inside-avoid'}`}>
               <div className={`flex flex-col items-end gap-3 min-w-[280px] w-full sm:w-auto ${isGeneratingPdf ? 'w-1/2' : ''}`}>
                 <div className="w-full flex justify-between items-center px-1">
-                  <span className={`font-bold ${isGeneratingPdf ? 'text-base text-black' : 'text-lg text-gray-700 print:text-base'}`}>담당 치료사:</span>
+                  <span className={`font-bold ${isGeneratingPdf ? 'text-base text-black' : 'text-lg text-gray-700 dark:text-gray-200 print:text-base'}`}>담당 치료사:</span>
                   {displayTherapist ? (
-                    <span className={`font-extrabold ${isGeneratingPdf ? 'text-lg text-black' : 'text-xl text-gray-900 print:text-lg'}`}>
-                      {displayTherapist.name} <span className="font-mono text-gray-500 tracking-tight text-sm">({displayTherapist.id})</span>
+                    <span className={`font-extrabold ${isGeneratingPdf ? 'text-lg text-black' : 'text-xl text-gray-900 dark:text-gray-100 print:text-lg'}`}>
+                      {displayTherapist.name} <span className="font-mono text-gray-500 dark:text-gray-400 tracking-tight text-sm">({displayTherapist.id})</span>
                     </span>
                   ) : (
-                    <span className="text-sm text-gray-400 italic">기록 없음</span>
+                    <span className="text-sm text-gray-400 dark:text-gray-500 italic">기록 없음</span>
                   )}
                 </div>
-                
+
                 <div className="w-full mt-2">
-                  <div className={`w-full flex items-center justify-center italic ${isGeneratingPdf ? 'h-12 border-b-2 border-black text-black' : 'h-16 border-b-2 border-gray-400 bg-gray-50 rounded-2xl text-gray-500 text-lg shadow-inner print:border-b-2 print:border-gray-800 print:shadow-none print:bg-transparent print:rounded-none'}`}>
+                  <div className={`w-full flex items-center justify-center italic ${isGeneratingPdf ? 'h-12 border-b-2 border-black text-black' : 'h-16 border-b-2 border-gray-400 dark:border-slate-600 bg-gray-50 dark:bg-slate-800/60 rounded-2xl text-gray-500 dark:text-gray-400 text-lg shadow-inner print:border-b-2 print:border-gray-800 print:shadow-none print:bg-transparent print:rounded-none'}`}>
                     {displayTherapist ? `${displayTherapist.name} (전자서명)` : "(서명)"}
                   </div>
                 </div>
-                
+
                 <div className="w-full flex justify-between items-center px-1 mt-4">
-                  <label className={`font-bold ${isGeneratingPdf ? 'text-base text-black' : 'text-lg text-gray-700 print:text-base'}`}>작성 일자:</label>
+                  <label className={`font-bold ${isGeneratingPdf ? 'text-base text-black' : 'text-lg text-gray-700 dark:text-gray-200 print:text-base'}`}>작성 일자:</label>
                   {isGeneratingPdf ? (
                     <span className="text-lg font-bold text-black border-b border-black text-right w-40 inline-block px-1">
                       {noteDate || "     .     .     "}
                     </span>
                   ) : (
-                    <input type="date" className="p-2.5 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/30 focus:border-blue-500 font-bold text-lg text-gray-800 bg-gray-50 shadow-sm print:border-none print:shadow-none print:bg-transparent print:p-0 text-right w-40"
+                    <input type="date" className="p-2.5 border-2 border-gray-200 dark:border-slate-700 rounded-xl focus:ring-4 focus:ring-blue-500/30 focus:border-blue-500 font-bold text-lg text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-slate-800 dark:[color-scheme:dark] shadow-sm print:border-none print:shadow-none print:bg-transparent print:p-0 text-right w-40"
                       {...methods.register("noteDate")} />
                   )}
                 </div>
