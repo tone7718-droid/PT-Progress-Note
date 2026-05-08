@@ -10,7 +10,7 @@ const makeNote = (id: string, name: string): NoteData => ({
   patientName: name,
   chartNo: "",
   birthDate: "",
-  gender: null,
+  gender: "",
   diagnosis: "",
   pmh: "",
   painScore: null,

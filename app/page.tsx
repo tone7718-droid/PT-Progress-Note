@@ -17,7 +17,6 @@ function HomeContent() {
   const isLoading = isAuthLoading || isNoteLoading;
   const initSync = useNoteStore((s) => s.initSync);
   const checkLocalData = useNoteStore((s) => s.checkLocalData);
-  const selectedNoteId = useNoteStore((s) => s.selectedNoteId);
 
   // 모바일 사이드바 (drawer) 토글
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -28,10 +27,17 @@ function HomeContent() {
     initSync();
   }, [checkLocalData, initSync]);
 
-  // 모바일 환경에서 노트가 변경되면 drawer 자동 닫음 (목록 → 노트 보기 전환)
+  /* 모바일에서 노트 선택이 바뀌면 drawer 자동 닫음 (목록 → 노트 보기 전환).
+     useEffect+의존성 대신 zustand subscribe 를 쓰는 이유: lint 의
+     react-hooks/set-state-in-effect 가 동기 setState 를 막기 때문. 외부
+     store 변화에 반응하는 콜백 안에서의 setState 는 정당한 사용 패턴. */
   useEffect(() => {
-    setMobileSidebarOpen(false);
-  }, [selectedNoteId]);
+    return useNoteStore.subscribe((state, prev) => {
+      if (state.selectedNoteId !== prev.selectedNoteId) {
+        setMobileSidebarOpen(false);
+      }
+    });
+  }, []);
 
   // drawer 열린 동안 배경 스크롤 잠금
   useEffect(() => {

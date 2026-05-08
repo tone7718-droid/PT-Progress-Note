@@ -37,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
       <head>
         {/* hydration 전에 html.dark 미리 붙여 FOUC 차단. localStorage["pt-theme"] 참조. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />

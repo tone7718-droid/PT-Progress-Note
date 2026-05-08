@@ -23,21 +23,26 @@ const LENS_OFFSET_Y = -130;
 const LONG_PRESS_MS = 400;
 const DRAG_THRESHOLD = 10;
 
-function entriesToMap(entries) {
-  const m = new Map();
+function entriesToMap(entries: PainEntry[]) {
+  const m = new Map<string, PainLevel>();
   for (const e of entries) m.set(`${e.view}::${e.region}`, e.painLevel);
   return m;
 }
 
-export default function BodyDiagram({ value, onChange }) {
-  const [internal, setInternal] = useState([]);
+interface BodyDiagramProps {
+  value?: PainEntry[];
+  onChange?: (entries: PainEntry[]) => void;
+}
+
+export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
+  const [internal, setInternal] = useState<PainEntry[]>([]);
   const ctrl = value !== undefined && onChange !== undefined;
   const entries = ctrl ? value : internal;
   const setEntries = ctrl ? onChange : setInternal;
 
   const painMap = useMemo(() => entriesToMap(entries), [entries]);
 
-  const magnifyRef = useRef(null);
+  const magnifyRef = useRef<PainEntry[] | null>(null);
 
   useEffect(() => {
     magnifyRef.current = entries;
