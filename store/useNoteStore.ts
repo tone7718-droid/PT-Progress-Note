@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { NoteData } from "@/types";
 import * as ds from "@/lib/localDataService"; // 로컬 전환용
 import { useAuthStore } from "./useAuthStore";
+import { snapshotBeforeDestructive } from "@/lib/autoBackup";
 
 interface NoteStore {
   notes: NoteData[];
@@ -124,6 +125,9 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   deleteNotes: async (ids) => {
+    // 파괴적 작업 직전 스냅샷 — 잘못 누른 사용자 복구용 보험
+    snapshotBeforeDestructive("before-delete", get().notes);
+
     set((state) => ({
       notes: state.notes.filter((n) => !ids.includes(n.id)),
       selectedNoteId: state.selectedNoteId && ids.includes(state.selectedNoteId) ? null : state.selectedNoteId
@@ -160,6 +164,9 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   importData: async (json) => {
     const data = JSON.parse(json);
     if (!data.notes || !Array.isArray(data.notes)) throw new Error("잘못된 데이터 형식입니다.");
+
+    // 파괴적 작업 직전 스냅샷 — import 가 기존 노트를 덮어쓸 수 있으니 보험
+    snapshotBeforeDestructive("before-import", get().notes);
 
     const notesCount = await ds.importNotes(data.notes);
     const updatedNotes = await ds.fetchNotes();
