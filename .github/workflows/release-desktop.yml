@@ -1,0 +1,71 @@
+name: Release Desktop (Tauri Windows)
+
+# Windows NSIS 설치 파일 + Tauri updater latest.json 을 빌드해
+# 태그 푸시 시 GitHub Release 에 첨부한다.
+#
+# 트리거:
+#   - 태그 푸시 (예: v0.1.7) — 자동
+#   - workflow_dispatch — 수동 실행 (드라이런 가능)
+#
+# 필요한 secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY          — minisign 개인키 (updater 서명용)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — 위 개인키 비밀번호
+#
+# tauri.conf.json 의 plugins.updater.endpoints 가
+#   https://github.com/<repo>/releases/latest/download/latest.json
+# 를 가리키므로, 릴리즈에 latest.json 이 첨부되어야 자동 업데이트가 동작한다.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "릴리즈 태그 (예: v0.1.7) — 비우면 dry-run"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & release (tauri-action)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: "PT-NOTE ${{ inputs.tag || github.ref_name }}"
+          releaseBody: |
+            자동 빌드된 Windows 설치 파일과 updater 메타파일이 첨부됩니다.
+            - `PT-NOTE_*_x64-setup.exe` — Windows 설치 파일 (NSIS)
+            - `latest.json` — Tauri updater 메타데이터
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          args: ""

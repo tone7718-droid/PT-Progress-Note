@@ -1,0 +1,79 @@
+name: Release Android (Capacitor APK)
+
+# Capacitor Android 빌드 — 디버그 APK 를 GitHub Release 에 첨부.
+# 서명된 릴리즈 APK 를 만들려면 keystore secret 추가 후 별도 단계 필요 (주석 참고).
+#
+# 트리거:
+#   - workflow_dispatch — 수동
+#   - 태그 푸시 (선택). 데스크톱 워크플로우와 동시에 돌리고 싶으면 같이 켤 것.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "릴리즈 태그 (예: v0.1.7)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle (next export)
+        run: npm run build
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build Android (debug APK)
+        run: ./gradlew assembleDebug
+        working-directory: android
+
+      # 릴리즈 APK 가 필요하면 keystore secret 을 등록하고 아래 블록을 활성화:
+      #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+      #   ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+      # - name: Decode keystore
+      #   run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+      # - name: Build Android (release APK, signed)
+      #   env:
+      #     ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      #     ANDROID_KEY_ALIAS:         ${{ secrets.ANDROID_KEY_ALIAS }}
+      #     ANDROID_KEY_PASSWORD:      ${{ secrets.ANDROID_KEY_PASSWORD }}
+      #   run: ./gradlew assembleRelease
+      #   working-directory: android
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt-note-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Attach APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          fail_on_unmatched_files: false
