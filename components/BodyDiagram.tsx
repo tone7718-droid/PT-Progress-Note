@@ -228,7 +228,7 @@ export default function BodyDiagram({ value, onChange }: BodyDiagramProps) {
   });
   const isDragging = useRef(false);
   const magnifyRef = useRef(magnify);
-  magnifyRef.current = magnify;
+  useEffect(() => { magnifyRef.current = magnify; }, [magnify]);
 
   const svgAntRef = useRef<SVGSVGElement>(null);
   const svgPostRef = useRef<SVGSVGElement>(null);
