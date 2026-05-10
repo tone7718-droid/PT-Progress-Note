@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "PT-NOTE",
-  "version": "0.1.6",
+  "version": "0.1.1",
   "identifier": "com.ptclinic.progressnote",
   "build": {
     "frontendDist": "../out",
@@ -44,7 +44,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4QzA2QjQ0OENBMkU4NTcKUldSWDZLS01SR3ZBbUF3aEwxeDBQWmJsQVhQWmJJL1h2dzRQbm1nY21EeTk0V21SYU45M2tWenkK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU2NEJGN0M1NzJGNEI5NzIKUldSeXVmUnl4ZmRMNWdLWUtIQ2xMUE83RmNrS3R0N3J3Wlh1TzBhVHA3ai9mbW13eEhZN2FFYW4K",
       "endpoints": [
         "https://github.com/tone7718-droid/PT-Progress-Note/releases/latest/download/latest.json"
       ]
