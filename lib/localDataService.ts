@@ -5,9 +5,10 @@
  * 데스크톱 앱에서는 OS의 사용자 프로필 폴더에 영구 저장 (Tauri WebView2 storage).
  *
  * 데이터 키:
- *   - pt_local_notes        : NoteData[]
+ *   - pt_local_notes        : NoteData[] (AES-GCM 암호화 저장)
  *   - pt_local_therapists   : TherapistRecord[]
  *   - pt_local_session      : { uid: string }  // 로그인 세션
+ *   - pt_enc_key_v1         : 256-bit AES-GCM 키 (hex)
  *
  * 기본 마스터 계정: id "master" / pw "0000" (앱 첫 실행 시 자동 생성)
  *
@@ -16,7 +17,9 @@
  */
 
 import type { NoteData, TherapistRecord, Therapist } from "@/types";
-import { hashPassword, verifyPassword } from "@/components/hashUtils";
+import { hashPassword, verifyPassword, isLegacyHash } from "@/components/hashUtils";
+import { encryptData, decryptData } from "@/lib/cryptoService";
+import { snapshotBeforeDestructive } from "@/lib/autoBackup";
 
 /* ── Storage Keys ── */
 const NOTES_KEY = "pt_local_notes";
@@ -24,6 +27,36 @@ const THERAPISTS_KEY = "pt_local_therapists";
 const SESSION_KEY = "pt_local_session";
 
 const DEFAULT_MASTER_PW = "0000";
+
+/* ── 임포트 시 문자열 필드 sanitize ── */
+const MAX_FIELD_LENGTH = 20_000;
+
+function sanitizeString(val: unknown): string {
+  if (typeof val !== "string") return "";
+  return val
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/on\w+\s*=/gi, "")
+    .slice(0, MAX_FIELD_LENGTH);
+}
+
+function sanitizeNote(note: NoteData): NoteData {
+  return {
+    ...note,
+    patientName: sanitizeString(note.patientName),
+    chartNo: sanitizeString(note.chartNo),
+    birthDate: sanitizeString(note.birthDate),
+    gender: sanitizeString(note.gender),
+    diagnosis: sanitizeString(note.diagnosis),
+    pmh: sanitizeString(note.pmh),
+    chiefComplaint: sanitizeString(note.chiefComplaint),
+    postural: sanitizeString(note.postural),
+    palpation: sanitizeString(note.palpation),
+    specialTest: sanitizeString(note.specialTest),
+    treatment: sanitizeString(note.treatment),
+    homeExercise: sanitizeString(note.homeExercise),
+    noteDate: sanitizeString(note.noteDate),
+  };
+}
 
 /* ══════════════════════════════════════════
    Helpers
@@ -42,6 +75,39 @@ function read<T>(key: string, fallback: T): T {
 function write<T>(key: string, value: T) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+/** 환자 노트를 AES-GCM 암호화해서 저장 */
+async function writeNotes(notes: NoteData[]): Promise<void> {
+  if (typeof window === "undefined") return;
+  const encrypted = await encryptData(JSON.stringify(notes));
+  window.localStorage.setItem(NOTES_KEY, encrypted);
+}
+
+/**
+ * 환자 노트 복호화 읽기.
+ * 기존 평문 데이터(마이그레이션 전)는 JSON 폴백으로 자동 처리.
+ */
+async function readNotes(): Promise<NoteData[]> {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(NOTES_KEY);
+  if (!raw) return [];
+  try {
+    const decrypted = await decryptData(raw);
+    return JSON.parse(decrypted) as NoteData[];
+  } catch {
+    // 암호화 전 평문 데이터 폴백 (최초 1회 마이그레이션)
+    try {
+      const plain = JSON.parse(raw) as NoteData[];
+      if (Array.isArray(plain)) {
+        await writeNotes(plain); // 즉시 암호화로 업그레이드
+        return plain;
+      }
+    } catch {
+      /* 손상된 데이터는 빈 배열 반환 */
+    }
+    return [];
+  }
 }
 
 async function ensureBootstrapMaster(): Promise<void> {
@@ -79,6 +145,15 @@ export async function signIn(
 
   const valid = await verifyPassword(password, found.passwordHash);
   if (!valid) throw new Error("ID 또는 비밀번호를 확인해주세요.");
+
+  // 레거시 SHA-256 해시를 PBKDF2 로 자동 업그레이드
+  if (isLegacyHash(found.passwordHash)) {
+    const newHash = await hashPassword(password);
+    write(
+      THERAPISTS_KEY,
+      therapists.map((t) => (t.uid === found.uid ? { ...t, passwordHash: newHash } : t))
+    );
+  }
 
   const session: Therapist = {
     uid: found.uid,
@@ -145,7 +220,7 @@ function sanitizePainAreas(note: NoteData): NoteData {
 }
 
 export async function fetchNotes(): Promise<NoteData[]> {
-  return read<NoteData[]>(NOTES_KEY, [])
+  return (await readNotes())
     .map(sanitizePainAreas)
     .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
 }
@@ -158,20 +233,18 @@ export async function upsertNote(note: NoteData): Promise<NoteData> {
     therapistUid: note.therapistUid || session?.uid || "",
   };
 
-  const notes = read<NoteData[]>(NOTES_KEY, []);
+  const notes = await readNotes();
   const idx = notes.findIndex((n) => n.id === enriched.id);
   if (idx >= 0) notes[idx] = enriched;
   else notes.unshift(enriched);
-  write(NOTES_KEY, notes);
+  await writeNotes(notes);
   return enriched;
 }
 
 export async function deleteNotes(ids: string[]): Promise<void> {
-  const notes = read<NoteData[]>(NOTES_KEY, []);
-  write(
-    NOTES_KEY,
-    notes.filter((n) => !ids.includes(n.id))
-  );
+  const notes = await readNotes();
+  snapshotBeforeDestructive("before-delete", notes);
+  await writeNotes(notes.filter((n) => !ids.includes(n.id)));
 }
 
 export async function transferNotesRpc(
@@ -180,7 +253,7 @@ export async function transferNotesRpc(
   toName: string,
   toLoginId: string | null
 ): Promise<number> {
-  const notes = read<NoteData[]>(NOTES_KEY, []);
+  const notes = await readNotes();
   let count = 0;
   const updated = notes.map((n) => {
     if (n.therapistUid === fromUid) {
@@ -198,7 +271,7 @@ export async function transferNotesRpc(
     }
     return n;
   });
-  write(NOTES_KEY, updated);
+  await writeNotes(updated);
   return count;
 }
 
@@ -279,8 +352,9 @@ export async function updateTherapistPasswordViaAuth(
    Export / Import
    ══════════════════════════════════════════ */
 
+/** 내보내기: 노트를 복호화한 평문 JSON 반환 */
 export async function exportAllData(): Promise<string> {
-  const notes = read<NoteData[]>(NOTES_KEY, []);
+  const notes = await readNotes(); // 복호화된 평문
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
   return JSON.stringify(
     { version: 2, exportedAt: new Date().toISOString(), notes, therapists },
@@ -291,10 +365,13 @@ export async function exportAllData(): Promise<string> {
 
 export async function importNotes(notes: NoteData[]): Promise<number> {
   if (notes.length === 0) return 0;
-  const existing = read<NoteData[]>(NOTES_KEY, []);
+  const existing = await readNotes();
+  snapshotBeforeDestructive("before-import", existing);
   const existingIds = new Set(existing.map((n) => n.id));
-  const newOnes = notes.filter((n) => !existingIds.has(n.id));
+  const newOnes = notes
+    .filter((n) => !existingIds.has(n.id))
+    .map(sanitizeNote); // Fix #10: 임포트 시 sanitize
   if (newOnes.length === 0) return 0;
-  write(NOTES_KEY, [...newOnes, ...existing]);
+  await writeNotes([...newOnes, ...existing]);
   return newOnes.length;
 }
