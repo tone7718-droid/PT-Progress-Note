@@ -76,7 +76,8 @@ export default function Sidebar() {
     reader.onload = async (ev) => {
       try {
         const result = await importData(ev.target?.result as string);
-        alert(`가져오기 완료: 노트 ${result.notesCount}건 추가됨`);
+        const therapistMsg = result.therapistsCount > 0 ? `, 치료사 ${result.therapistsCount}명` : "";
+        alert(`가져오기 완료: 노트 ${result.notesCount}건${therapistMsg} 추가됨`);
       } catch {
         alert("데이터 가져오기 실패: 올바른 JSON 파일인지 확인해주세요.");
       }
@@ -107,10 +108,11 @@ export default function Sidebar() {
 
   const filteredNotes = visibleNotes
     .filter(
+      // ?? "" — 구버전/외부 백업에서 필드가 빠진 노트가 있어도 crash 하지 않도록 방어
       (n) =>
-        n.patientName.includes(search) ||
-        n.diagnosis.includes(search) ||
-        n.chartNo.includes(search)
+        (n.patientName ?? "").includes(search) ||
+        (n.diagnosis ?? "").includes(search) ||
+        (n.chartNo ?? "").includes(search)
     )
     .sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
 

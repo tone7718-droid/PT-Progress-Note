@@ -41,6 +41,7 @@ export default function ProgressNoteForm() {
   const [pendingDraft, setPendingDraft] = useState<DraftNoteData | null>(null);
   const [autoSaveFlash, setAutoSaveFlash] = useState(false);
   const [lastDraftAt, setLastDraftAt] = useState<string | null>(null);
+  const lastDraftJsonRef = useRef<string | null>(null); // 직전 자동 저장본 (변경 없으면 스킵)
 
   // 노트 복사 (이 노트를 베이스로 새 노트 시작)
   const pendingCopyRef = useRef<NoteData | null>(null);
@@ -83,15 +84,17 @@ export default function ProgressNoteForm() {
       reset({ ...EMPTY_NOTE, noteDate: new Date().toISOString().split("T")[0], rom: [{ joint: "", measuredROM: "", normalRange: "" }] });
       setCurrentNoteId(null);
       setSavedTherapist(null);
-      // 임시 저장된 draft 가 있으면 복구 배너 표시
-      const d = loadDraft();
-      if (d && isNoteContentful(d)) {
-        setPendingDraft(d);
-      } else {
-        setPendingDraft(null);
-      }
       setLastDraftAt(null);
-      return;
+      lastDraftJsonRef.current = null;
+      // 임시 저장된 draft 가 있으면 복구 배너 표시 (복호화가 비동기라 로드 완료 후 반영)
+      let cancelled = false;
+      void loadDraft().then((d) => {
+        if (cancelled) return;
+        setPendingDraft(d && isNoteContentful(d) ? d : null);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
     // 기존 노트 편집 모드 → draft 배너 숨김
     setPendingDraft(null);
@@ -106,17 +109,21 @@ export default function ProgressNoteForm() {
   }, [selectedNoteId, notes, reset]);
 
   /* ── 자동 임시 저장 (5초 주기) ──
-     새 노트 작성 모드에서만 작동. 빈 폼은 저장 안 함.
+     새 노트 작성 모드에서만 작동. 빈 폼·직전 저장본과 동일한 내용은 저장 안 함.
      [저장] 성공 시 clearDraft() 로 정리됨. */
   useEffect(() => {
     if (currentNoteId !== null) return; // 기존 노트 수정 중은 제외
     const interval = window.setInterval(() => {
       const data = methods.getValues();
       if (!isNoteContentful(data)) return;
-      saveDraft(data);
-      setLastDraftAt(new Date().toISOString());
-      setAutoSaveFlash(true);
-      window.setTimeout(() => setAutoSaveFlash(false), 1200);
+      const serialized = JSON.stringify(data);
+      if (serialized === lastDraftJsonRef.current) return; // 변경 없음 — 스킵
+      void saveDraft(data).then(() => {
+        lastDraftJsonRef.current = serialized;
+        setLastDraftAt(new Date().toISOString());
+        setAutoSaveFlash(true);
+        window.setTimeout(() => setAutoSaveFlash(false), 1200);
+      });
     }, 5000);
     return () => window.clearInterval(interval);
   }, [currentNoteId, methods]);
@@ -202,61 +209,77 @@ export default function ProgressNoteForm() {
     setTimeout(() => setValidationErrors([]), 4000);
   };
 
-  const handleDownloadPDF = async () => {
-    if (!containerRef.current) return;
-    setIsGeneratingPdf(true);
+  const wasDarkRef = useRef(false);
 
-    /* 다크 모드일 때 PDF가 어둡게 캡처되지 않도록 캡처 직전 dark 클래스 일시 제거.
-       finally 에서 원복. */
+  const handleDownloadPDF = () => {
+    if (isGeneratingPdf) return;
+    /* 다크 모드일 때 PDF가 어둡게 캡처되지 않도록 캡처 동안 dark 클래스 일시 제거.
+       캡처 완료 후 원복 (아래 effect 의 finally). */
     const html = document.documentElement;
-    const wasDark = html.classList.contains("dark");
-    if (wasDark) html.classList.remove("dark");
-
-    setTimeout(async () => {
-      try {
-        const canvas = await html2canvas(containerRef.current!, {
-          scale: 1.5,
-          useCORS: true,
-          windowWidth: 800,
-          backgroundColor: "#ffffff",
-        });
-
-        // JPEG 0.85 → PNG 대비 약 1/10 용량 (의무기록 가독성에는 충분)
-        const imgData = canvas.toDataURL("image/jpeg", 0.85);
-
-        const pdf = new jsPDF("p", "mm", "a4");
-        const pageWidth = pdf.internal.pageSize.getWidth();   // 210mm
-        const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
-        // 캔버스를 A4 폭에 맞췄을 때 총 높이 (mm)
-        const imgTotalHeight = (canvas.height * pageWidth) / canvas.width;
-
-        // 한 페이지에 들어갈 만큼만 보이고 나머지는 다음 페이지로
-        let heightLeft = imgTotalHeight;
-        let position = 0;
-        pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgTotalHeight);
-        heightLeft -= pageHeight;
-
-        while (heightLeft > 0) {
-          position -= pageHeight; // 이미지를 위로 스크롤
-          pdf.addPage();
-          pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgTotalHeight);
-          heightLeft -= pageHeight;
-        }
-
-        const dateStr = noteDate ? noteDate.replace(/-/g, "") : "날짜없음";
-        const nameStr = patientName || "이름없음";
-        const fileName = `환자평가지_${nameStr}_${dateStr}.pdf`;
-
-        pdf.save(fileName);
-      } catch (error) {
-        console.error("PDF 생성 실패:", error);
-        alert("PDF 생성에 실패했습니다.");
-      } finally {
-        if (wasDark) html.classList.add("dark");
-        setIsGeneratingPdf(false);
-      }
-    }, 150);
+    wasDarkRef.current = html.classList.contains("dark");
+    if (wasDarkRef.current) html.classList.remove("dark");
+    setIsGeneratingPdf(true); // PDF 모드 렌더 완료 후 아래 effect 가 캡처 수행
   };
+
+  /* PDF 모드 스타일이 실제 그려진 뒤 캡처 — 고정 시간 대기(setTimeout) 대신
+     커밋 후 두 프레임을 기다려, 느린 기기에서 스타일 미적용 상태로 캡처되는 것을 방지 */
+  useEffect(() => {
+    if (!isGeneratingPdf) return;
+    let cancelled = false;
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        void (async () => {
+          try {
+            if (!containerRef.current) return;
+            const canvas = await html2canvas(containerRef.current, {
+              scale: 1.5,
+              useCORS: true,
+              windowWidth: 800,
+              backgroundColor: "#ffffff",
+            });
+
+            // JPEG 0.85 → PNG 대비 약 1/10 용량 (의무기록 가독성에는 충분)
+            const imgData = canvas.toDataURL("image/jpeg", 0.85);
+
+            const pdf = new jsPDF("p", "mm", "a4");
+            const pageWidth = pdf.internal.pageSize.getWidth();   // 210mm
+            const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
+            // 캔버스를 A4 폭에 맞췄을 때 총 높이 (mm)
+            const imgTotalHeight = (canvas.height * pageWidth) / canvas.width;
+
+            // 한 페이지에 들어갈 만큼만 보이고 나머지는 다음 페이지로
+            let heightLeft = imgTotalHeight;
+            let position = 0;
+            pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgTotalHeight);
+            heightLeft -= pageHeight;
+
+            while (heightLeft > 0) {
+              position -= pageHeight; // 이미지를 위로 스크롤
+              pdf.addPage();
+              pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgTotalHeight);
+              heightLeft -= pageHeight;
+            }
+
+            const { patientName: nameVal, noteDate: dateVal } = methods.getValues();
+            const dateStr = dateVal ? dateVal.replace(/-/g, "") : "날짜없음";
+            const nameStr = nameVal || "이름없음";
+            pdf.save(`환자평가지_${nameStr}_${dateStr}.pdf`);
+          } catch (error) {
+            console.error("PDF 생성 실패:", error);
+            alert("PDF 생성에 실패했습니다.");
+          } finally {
+            if (wasDarkRef.current) document.documentElement.classList.add("dark");
+            setIsGeneratingPdf(false);
+          }
+        })();
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [isGeneratingPdf, methods]);
 
   const displayTherapist = currentNoteId ? savedTherapist : therapist;
 

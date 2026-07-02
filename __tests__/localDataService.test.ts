@@ -110,6 +110,79 @@ describe("localDataService — notes CRUD", () => {
   });
 });
 
+describe("localDataService — corrupt data safety", () => {
+  it("quarantines undecryptable data instead of silently losing it on next save", async () => {
+    // 암호화 키와 안 맞는 손상 데이터 (복호화 실패 + JSON 파싱 실패)
+    window.localStorage.setItem("pt_local_notes", "corrupted-not-json{{{");
+
+    const notes = await ds.fetchNotes();
+    expect(notes).toEqual([]);
+
+    // 원본이 격리 키에 보관되었는지
+    const quarantineKeys = Object.keys(window.localStorage).filter((k) =>
+      k.startsWith("pt_local_notes_corrupt_")
+    );
+    expect(quarantineKeys).toHaveLength(1);
+    expect(window.localStorage.getItem(quarantineKeys[0])).toBe("corrupted-not-json{{{");
+
+    // 이후 새 노트를 저장해도 격리본은 그대로 유지됨
+    await ds.upsertNote(sampleNote({ id: "new-1" }));
+    expect(window.localStorage.getItem(quarantineKeys[0])).toBe("corrupted-not-json{{{");
+    expect(await ds.fetchNotes()).toHaveLength(1);
+  });
+
+  it("migrates legacy plaintext notes to encrypted storage", async () => {
+    const legacy = [sampleNote({ id: "legacy-1", patientName: "평문환자" })];
+    window.localStorage.setItem("pt_local_notes", JSON.stringify(legacy));
+
+    const notes = await ds.fetchNotes();
+    expect(notes).toHaveLength(1);
+    expect(notes[0].patientName).toBe("평문환자");
+
+    // 읽는 순간 암호화로 업그레이드됨
+    expect(window.localStorage.getItem("pt_local_notes")!).not.toContain("평문환자");
+  });
+});
+
+describe("localDataService — therapist import", () => {
+  const record = (uid: string, id: string | null, overrides = {}) => ({
+    uid,
+    id,
+    name: `치료사-${uid}`,
+    passwordHash: "pbkdf2v1:00:11",
+    role: "therapist" as const,
+    resigned: false,
+    ...overrides,
+  });
+
+  it("imports new therapists and skips duplicates by uid", async () => {
+    await ds.signIn("master", "0000"); // bootstrap
+    expect(await ds.importTherapists([record("t1", "PT-001")])).toBe(1);
+    // 같은 uid 재임포트 → 스킵
+    expect(await ds.importTherapists([record("t1", "PT-001")])).toBe(0);
+
+    const all = await ds.fetchTherapists();
+    expect(all.filter((t) => t.role === "therapist")).toHaveLength(1);
+  });
+
+  it("skips master records and active login-id collisions", async () => {
+    await ds.signIn("master", "0000");
+    await ds.createTherapistViaEdgeFunction("PT-001", "기존", "1234");
+
+    const imported = await ds.importTherapists([
+      record("m2", "master2", { role: "master" as const }), // 마스터 → 스킵
+      record("t2", "PT-001"), // 활성 ID 충돌 → 스킵
+      record("t3", "PT-002"), // 정상
+    ]);
+    expect(imported).toBe(1);
+
+    const all = await ds.fetchTherapists();
+    expect(all.find((t) => t.uid === "t3")).toBeTruthy();
+    expect(all.find((t) => t.uid === "t2")).toBeUndefined();
+    expect(all.find((t) => t.uid === "m2")).toBeUndefined();
+  });
+});
+
 describe("localDataService — note transfer", () => {
   it("transferNotesRpc reassigns notes from one therapist to another", async () => {
     await ds.upsertNote(

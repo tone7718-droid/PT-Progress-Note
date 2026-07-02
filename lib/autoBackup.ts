@@ -4,14 +4,15 @@
  *
  * 사용자 보호: "방금 삭제했는데 잘못 눌렀다" 같은 사고 시 복원 단서를 남기는 게 목적.
  * UI 메뉴는 의도적으로 두지 않음 (이전 버전에서 제거됨). 복원이 필요하면 콘솔에서
- * `JSON.parse(localStorage["pt_auto_backup_v1"])` 로 직접 꺼내 쓰는 식.
+ * `await listBackups()` 로 꺼내 쓰는 식 (노트 본문과 동일하게 AES-GCM 암호화 저장).
  *
  * 저장 키: localStorage["pt_auto_backup_v1"]
- * 형식:    { snapshots: BackupSnapshot[] } — 최신이 배열 끝.
+ * 형식:    encryptData(JSON.stringify({ snapshots: BackupSnapshot[] })) — 최신이 배열 끝.
  * 보관:    최근 MAX_SNAPSHOTS 개만 유지. 쿼터 초과 시 가장 오래된 것부터 비우며 재시도.
  */
 
 import type { NoteData } from "@/types";
+import { encryptData, decryptData } from "@/lib/cryptoService";
 
 const KEY = "pt_auto_backup_v1";
 const MAX_SNAPSHOTS = 5;
@@ -29,12 +30,18 @@ interface BackupStore {
   snapshots: BackupSnapshot[];
 }
 
-function readStore(): BackupStore {
+async function readStore(): Promise<BackupStore> {
   if (typeof window === "undefined") return { snapshots: [] };
   try {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return { snapshots: [] };
-    const parsed = JSON.parse(raw);
+    let json: string;
+    try {
+      json = await decryptData(raw);
+    } catch {
+      json = raw; // 암호화 전 평문 데이터 폴백 (다음 write 때 암호화로 업그레이드됨)
+    }
+    const parsed = JSON.parse(json);
     if (!parsed || !Array.isArray(parsed.snapshots)) return { snapshots: [] };
     return parsed as BackupStore;
   } catch {
@@ -42,24 +49,25 @@ function readStore(): BackupStore {
   }
 }
 
-function writeStore(store: BackupStore): boolean {
+async function writeStore(store: BackupStore): Promise<boolean> {
   if (typeof window === "undefined") return false;
   /* 쿼터 초과 시 오래된 스냅샷부터 1개씩 버려가며 재시도. 최후 1개도 못 넣으면 포기. */
-  let attempt = { ...store, snapshots: [...store.snapshots] };
+  let snapshots = [...store.snapshots];
   for (let i = 0; i < MAX_SNAPSHOTS; i++) {
     try {
-      window.localStorage.setItem(KEY, JSON.stringify(attempt));
+      const encrypted = await encryptData(JSON.stringify({ snapshots }));
+      window.localStorage.setItem(KEY, encrypted);
       return true;
     } catch {
-      if (attempt.snapshots.length <= 1) return false;
-      attempt = { snapshots: attempt.snapshots.slice(1) };
+      if (snapshots.length <= 1) return false;
+      snapshots = snapshots.slice(1);
     }
   }
   return false;
 }
 
 /** 파괴적 작업 직전 호출. 실패해도 throw 안 함 — 조용한 보험이 목적. */
-export function snapshotBeforeDestructive(reason: BackupReason, notes: NoteData[]): void {
+export async function snapshotBeforeDestructive(reason: BackupReason, notes: NoteData[]): Promise<void> {
   if (typeof window === "undefined") return;
   if (!Array.isArray(notes) || notes.length === 0) return; // 비어 있으면 의미 없음
 
@@ -69,12 +77,12 @@ export function snapshotBeforeDestructive(reason: BackupReason, notes: NoteData[
     noteCount: notes.length,
     notes,
   };
-  const store = readStore();
+  const store = await readStore();
   const next = [...store.snapshots, snap].slice(-MAX_SNAPSHOTS);
-  writeStore({ snapshots: next });
+  await writeStore({ snapshots: next });
 }
 
 /** 콘솔 디버깅 / 향후 복원 UI 추가 시 사용. */
-export function listBackups(): BackupSnapshot[] {
-  return readStore().snapshots;
+export async function listBackups(): Promise<BackupSnapshot[]> {
+  return (await readStore()).snapshots;
 }

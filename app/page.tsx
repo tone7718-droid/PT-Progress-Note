@@ -16,16 +16,14 @@ function HomeContent() {
   const isNoteLoading = useNoteStore((s) => s.isLoading);
   const isLoading = isAuthLoading || isNoteLoading;
   const initSync = useNoteStore((s) => s.initSync);
-  const checkLocalData = useNoteStore((s) => s.checkLocalData);
 
   // 모바일 사이드바 (drawer) 토글
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { theme, toggle: toggleTheme } = useTheme();
 
   useEffect(() => {
-    checkLocalData();
     initSync();
-  }, [checkLocalData, initSync]);
+  }, [initSync]);
 
   /* 모바일에서 노트 선택이 바뀌면 drawer 자동 닫음 (목록 → 노트 보기 전환).
      useEffect+의존성 대신 zustand subscribe 를 쓰는 이유: lint 의

@@ -23,7 +23,9 @@ interface AuthStore {
 export const useAuthStore = create<AuthStore>((set) => ({
   therapist: null,
   therapists: [],
-  isLoading: false,
+  // 세션 복원(initSync → onAuthStateChange) 완료 전까지 로딩 상태 유지
+  // — 새로고침 시 로그인 화면이 잠깐 깜빡이는 문제 방지
+  isLoading: true,
   error: null,
   
   setTherapist: (t) => set({ therapist: t }),

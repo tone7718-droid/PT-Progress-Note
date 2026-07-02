@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { X, Save, Sparkles } from "lucide-react";
 import { loadMacros, saveMacros } from "@/lib/macros";
 
@@ -10,16 +10,26 @@ interface MacroManagementModalProps {
 
 export default function MacroManagementModal({ onClose }: MacroManagementModalProps) {
   const [slots, setSlots] = useState<string[]>(() => loadMacros());
+  // 마지막 저장 시점의 스냅샷 — 닫기 전 미저장 변경 감지용
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(() => JSON.stringify(loadMacros()));
   const [savedFlash, setSavedFlash] = useState(false);
+
+  /* 미저장 변경이 있으면 확인 후 닫기 */
+  const requestClose = useCallback(() => {
+    if (JSON.stringify(slots) !== savedSnapshot) {
+      if (!window.confirm("저장하지 않은 변경 사항이 있습니다. 저장 없이 닫을까요?")) return;
+    }
+    onClose();
+  }, [slots, savedSnapshot, onClose]);
 
   // ESC 로 닫기
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [requestClose]);
 
   const setSlot = (idx: number, value: string) => {
     setSlots((cur) => {
@@ -31,6 +41,7 @@ export default function MacroManagementModal({ onClose }: MacroManagementModalPr
 
   const handleSave = () => {
     saveMacros(slots);
+    setSavedSnapshot(JSON.stringify(slots));
     // 다른 SmartTextarea 인스턴스에 알림
     window.dispatchEvent(new Event("pt-macros-updated"));
     setSavedFlash(true);
@@ -60,7 +71,7 @@ export default function MacroManagementModal({ onClose }: MacroManagementModalPr
             >
               <Save size={14} /> 저장
             </button>
-            <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors" aria-label="모달 닫기">
+            <button onClick={requestClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors" aria-label="모달 닫기">
               <X size={20} />
             </button>
           </div>
@@ -99,7 +110,7 @@ export default function MacroManagementModal({ onClose }: MacroManagementModalPr
           )}
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="px-4 py-2 text-sm font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
           >
             닫기

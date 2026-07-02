@@ -17,7 +17,7 @@ export const viewport: Viewport = {
   themeColor: "#2563eb",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // maximumScale 미지정 — 저시력 사용자의 핀치 줌(확대)을 막지 않음 (접근성)
 };
 
 export const metadata: Metadata = {

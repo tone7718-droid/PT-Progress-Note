@@ -20,6 +20,7 @@ import type { NoteData, TherapistRecord, Therapist } from "@/types";
 import { hashPassword, verifyPassword, isLegacyHash } from "@/components/hashUtils";
 import { encryptData, decryptData } from "@/lib/cryptoService";
 import { snapshotBeforeDestructive } from "@/lib/autoBackup";
+import { genId } from "@/lib/genId";
 
 /* ── Storage Keys ── */
 const NOTES_KEY = "pt_local_notes";
@@ -85,8 +86,25 @@ async function writeNotes(notes: NoteData[]): Promise<void> {
 }
 
 /**
+ * 복호화/파싱이 모두 실패한 원본을 별도 키에 격리 보관.
+ * readNotes 가 빈 배열을 반환한 뒤 사용자가 노트를 저장하면 NOTES_KEY 가
+ * 덮어써지므로, 격리해 두지 않으면 원본이 영구 소실됨 (암호화 키 손상 대비).
+ */
+function quarantineCorruptNotes(raw: string): void {
+  try {
+    window.localStorage.setItem(`${NOTES_KEY}_corrupt_${Date.now()}`, raw);
+    console.error(
+      `[localDataService] 노트 복호화 실패 — 원본을 "${NOTES_KEY}_corrupt_*" 키에 보관했습니다.`
+    );
+  } catch {
+    /* 격리 보관 실패 (쿼터 초과 등) — 앱 동작은 계속 */
+  }
+}
+
+/**
  * 환자 노트 복호화 읽기.
  * 기존 평문 데이터(마이그레이션 전)는 JSON 폴백으로 자동 처리.
+ * 복호화·파싱 모두 실패 시 원본을 격리 보관 후 빈 배열 반환.
  */
 async function readNotes(): Promise<NoteData[]> {
   if (typeof window === "undefined") return [];
@@ -98,14 +116,15 @@ async function readNotes(): Promise<NoteData[]> {
   } catch {
     // 암호화 전 평문 데이터 폴백 (최초 1회 마이그레이션)
     try {
-      const plain = JSON.parse(raw) as NoteData[];
+      const plain = JSON.parse(raw);
       if (Array.isArray(plain)) {
-        await writeNotes(plain); // 즉시 암호화로 업그레이드
-        return plain;
+        await writeNotes(plain as NoteData[]); // 즉시 암호화로 업그레이드
+        return plain as NoteData[];
       }
     } catch {
-      /* 손상된 데이터는 빈 배열 반환 */
+      /* 아래 격리 처리로 진행 */
     }
+    quarantineCorruptNotes(raw);
     return [];
   }
 }
@@ -243,7 +262,7 @@ export async function upsertNote(note: NoteData): Promise<NoteData> {
 
 export async function deleteNotes(ids: string[]): Promise<void> {
   const notes = await readNotes();
-  snapshotBeforeDestructive("before-delete", notes);
+  await snapshotBeforeDestructive("before-delete", notes);
   await writeNotes(notes.filter((n) => !ids.includes(n.id)));
 }
 
@@ -300,7 +319,7 @@ export async function createTherapistViaEdgeFunction(
 
   const passwordHash = await hashPassword(password);
   const newRecord: TherapistRecord = {
-    uid: `therapist-${Date.now()}`,
+    uid: `therapist-${genId()}`,
     id: loginId,
     name,
     passwordHash,
@@ -366,12 +385,55 @@ export async function exportAllData(): Promise<string> {
 export async function importNotes(notes: NoteData[]): Promise<number> {
   if (notes.length === 0) return 0;
   const existing = await readNotes();
-  snapshotBeforeDestructive("before-import", existing);
+  await snapshotBeforeDestructive("before-import", existing);
   const existingIds = new Set(existing.map((n) => n.id));
   const newOnes = notes
     .filter((n) => !existingIds.has(n.id))
     .map(sanitizeNote); // Fix #10: 임포트 시 sanitize
   if (newOnes.length === 0) return 0;
   await writeNotes([...newOnes, ...existing]);
+  return newOnes.length;
+}
+
+/**
+ * 백업 파일의 치료사 목록 복원 (기기 이전용).
+ * - uid 가 이미 존재하면 스킵 (중복 방지)
+ * - 마스터 계정은 기기별 1개 유지 — 백업의 마스터는 스킵
+ * - 활성 치료사와 로그인 ID 가 충돌하면 스킵
+ * - passwordHash 를 그대로 복원하므로 새 기기에서 기존 비밀번호로 로그인 가능
+ */
+export async function importTherapists(records: TherapistRecord[]): Promise<number> {
+  if (!Array.isArray(records) || records.length === 0) return 0;
+  await ensureBootstrapMaster();
+  const existing = read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  const existingUids = new Set(existing.map((t) => t.uid));
+  const activeIds = new Set(
+    existing.filter((t) => !t.resigned && t.id).map((t) => t.id as string)
+  );
+
+  const newOnes: TherapistRecord[] = records
+    .filter(
+      (r) =>
+        !!r &&
+        typeof r === "object" &&
+        typeof r.uid === "string" &&
+        r.uid.length > 0 &&
+        typeof r.name === "string" &&
+        typeof r.passwordHash === "string" &&
+        r.role === "therapist" &&
+        !existingUids.has(r.uid) &&
+        !(typeof r.id === "string" && activeIds.has(r.id))
+    )
+    .map((r) => ({
+      uid: r.uid,
+      id: typeof r.id === "string" ? r.id : null,
+      name: r.name,
+      passwordHash: r.passwordHash,
+      role: "therapist" as const,
+      resigned: r.resigned === true,
+    }));
+
+  if (newOnes.length === 0) return 0;
+  write(THERAPISTS_KEY, [...existing, ...newOnes]);
   return newOnes.length;
 }

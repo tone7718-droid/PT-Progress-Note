@@ -2,15 +2,14 @@ import { create } from "zustand";
 import type { NoteData } from "@/types";
 import * as ds from "@/lib/localDataService"; // 로컬 전환용
 import { useAuthStore } from "./useAuthStore";
-import { snapshotBeforeDestructive } from "@/lib/autoBackup";
+import { genId } from "@/lib/genId";
 
 interface NoteStore {
   notes: NoteData[];
   selectedNoteId: string | null;
-  hasLocalData: boolean;
   isLoading: boolean;
   error: string | null;
-  
+
   selectNote: (id: string | null) => void;
   createNewNote: () => void;
   refreshNotes: () => Promise<void>;
@@ -19,46 +18,24 @@ interface NoteStore {
   transferNotes: (fromUid: string, toUid: string, toName: string, toLoginId: string | null) => Promise<void>;
   exportData: () => Promise<string>;
   importData: (json: string) => Promise<{ notesCount: number; therapistsCount: number }>;
-  checkLocalData: () => void;
   initSync: () => void;
 }
 
 export const useNoteStore = create<NoteStore>((set, get) => ({
   notes: [],
   selectedNoteId: null,
-  hasLocalData: false,
   isLoading: false,
   error: null,
 
   selectNote: (id) => set({ selectedNoteId: id }),
   createNewNote: () => set({ selectedNoteId: null }),
 
-  checkLocalData: () => {
-    // 구(舊) Context 기반 키 + 현재 로컬 모드 키 모두 감지
-    // 클라우드 복귀 시 "로컬에 마이그레이션할 데이터가 있는지" 판단용
-    if (typeof window !== "undefined") {
-      try {
-        const keys = [
-          "progressNotes",     // 구버전 Context 기반
-          "pt_therapists",     // 구버전 Context 기반
-          "pt_local_notes",    // 현재 localDataService
-          "pt_local_therapists", // 현재 localDataService
-        ];
-        const hasData = keys.some((k) => {
-          const v = localStorage.getItem(k);
-          return v && v !== "[]";
-        });
-        if (hasData) set({ hasLocalData: true });
-      } catch (err) {
-        console.warn("[init] localStorage access failed:", err);
-      }
-    }
-  },
-
   initSync: () => {
     // Auth 상태 리스너 등록 (cleanup은 앱 생명주기 동안 유지하므로 subscription 미보관)
     ds.onAuthStateChange(async (t) => {
       useAuthStore.getState().setTherapist(t);
+      // 세션 복원 완료 — 초기 로딩 해제 (이후 노트 로딩은 이 스토어의 isLoading 이 담당)
+      useAuthStore.getState().setLoading(false);
       if (t) {
         set({ isLoading: true });
         try {
@@ -96,14 +73,14 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const now = new Date().toISOString();
     const noteToSave: NoteData = existingId
       ? { ...data, id: existingId, savedAt: now }
-      : { ...data, id: `note-${Date.now()}`, savedAt: now };
+      : { ...data, id: `note-${genId()}`, savedAt: now };
 
     // Optimistic Update
     set((state) => {
       const updated = existingId
         ? state.notes.map((n) => (n.id === existingId ? noteToSave : n))
         : [noteToSave, ...state.notes];
-      return { 
+      return {
         notes: updated.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()),
         selectedNoteId: noteToSave.id
       };
@@ -125,9 +102,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   deleteNotes: async (ids) => {
-    // 파괴적 작업 직전 스냅샷 — 잘못 누른 사용자 복구용 보험
-    snapshotBeforeDestructive("before-delete", get().notes);
-
+    // 삭제 직전 스냅샷은 ds.deleteNotes 내부에서 1회 수행 (중복 방지)
     set((state) => ({
       notes: state.notes.filter((n) => !ids.includes(n.id)),
       selectedNoteId: state.selectedNoteId && ids.includes(state.selectedNoteId) ? null : state.selectedNoteId
@@ -165,13 +140,18 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const data = JSON.parse(json);
     if (!data.notes || !Array.isArray(data.notes)) throw new Error("잘못된 데이터 형식입니다.");
 
-    // 파괴적 작업 직전 스냅샷 — import 가 기존 노트를 덮어쓸 수 있으니 보험
-    snapshotBeforeDestructive("before-import", get().notes);
-
+    // import 직전 스냅샷은 ds.importNotes 내부에서 1회 수행 (중복 방지)
     const notesCount = await ds.importNotes(data.notes);
+    const therapistsCount = Array.isArray(data.therapists)
+      ? await ds.importTherapists(data.therapists)
+      : 0;
+
     const updatedNotes = await ds.fetchNotes();
     set({ notes: updatedNotes });
+    if (therapistsCount > 0) {
+      useAuthStore.getState().setTherapists(await ds.fetchTherapists());
+    }
 
-    return { notesCount, therapistsCount: 0 };
+    return { notesCount, therapistsCount };
   },
 }));
