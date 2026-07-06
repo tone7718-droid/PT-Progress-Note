@@ -14,7 +14,7 @@ const makeNote = (id: string, name: string): NoteData => ({
   diagnosis: "",
   pmh: "",
   painScore: null,
-  painAreas: [],
+  painAreas: {},
   chiefComplaint: "",
   postural: "",
   palpation: "",

@@ -222,20 +222,43 @@ export async function reauthenticate(
    ══════════════════════════════════════════ */
 
 /**
- * 구버전 painAreas (string[]) 자동 정리.
- * v0.1.3 이전에 저장된 노트는 painAreas 가 부위 ID 문자열 배열이었음.
- * v0.1.4 부터는 PainEntry[] (view+region+painLevel) 구조라 형식이 다름.
- * 호환 변환은 의학적으로 부정확해질 수 있어 그냥 비움 — 환자 본인이 다시 마킹.
+ * painAreas 형식 정규화.
+ * 신규 형식: Record<string, number> (부위명 → 1|2|3). BodyDiagram 과 공유.
+ * 구버전 형식 마이그레이션:
+ *   - PainEntry[] ({view, region, painLevel}): region 기준으로 병합 → Record. view 는 버림
+ *     (신규 컴포넌트는 부위명이 좌/우를 포함하고 view 를 식별에 쓰지 않음).
+ *   - string[] (v0.1.3 이전 부위 ID 배열): 호환 변환 불가 → 비움.
  */
 function sanitizePainAreas(note: NoteData): NoteData {
-  const arr = note.painAreas as unknown;
-  if (!Array.isArray(arr) || arr.length === 0) return note;
-  // 첫 항목이 객체가 아니면 (= 구버전 문자열) 비움
-  const first = arr[0];
-  if (typeof first === "string" || (first !== null && typeof first === "object" && !("region" in first))) {
-    return { ...note, painAreas: [] };
+  const pa = note.painAreas as unknown;
+
+  // 신규 형식 (Record<string, number>) — 값 범위(1~3)만 검증
+  if (pa && typeof pa === "object" && !Array.isArray(pa)) {
+    const clean: Record<string, number> = {};
+    for (const [region, level] of Object.entries(pa as Record<string, unknown>)) {
+      if (typeof level === "number" && level >= 1 && level <= 3) clean[region] = level;
+    }
+    return { ...note, painAreas: clean };
   }
-  return note;
+
+  // 구버전 PainEntry[] → Record<string, number>
+  if (Array.isArray(pa)) {
+    const rec: Record<string, number> = {};
+    for (const item of pa) {
+      if (item && typeof item === "object" && "region" in item && "painLevel" in item) {
+        const region = (item as { region?: unknown }).region;
+        const level = (item as { painLevel?: unknown }).painLevel;
+        if (typeof region === "string" && typeof level === "number" && level >= 1 && level <= 3) {
+          rec[region] = level;
+        }
+      }
+      // string[] 등 그 외 형식은 변환 불가 → 무시
+    }
+    return { ...note, painAreas: rec };
+  }
+
+  // null/undefined 등
+  return { ...note, painAreas: {} };
 }
 
 export async function fetchNotes(): Promise<NoteData[]> {

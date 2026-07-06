@@ -14,14 +14,8 @@ export interface Therapist {
   role: "therapist" | "master";
 }
 
-export type PainView = "anterior" | "posterior";
-export type PainLevel = 1 | 2 | 3;
-
-export interface PainEntry {
-  view: PainView;
-  region: string; // 한글 부위명 (예: "우측 대흉근")
-  painLevel: PainLevel;
-}
+/** 통증 부위 마킹: 부위명 → 통증 강도 (1=경도, 2=중등도, 3=중증). BodyDiagram 과 형식 공유. */
+export type PainAreas = Record<string, number>;
 
 export interface NoteData {
   id: string;
@@ -33,7 +27,7 @@ export interface NoteData {
   diagnosis: string;
   pmh: string;
   painScore: number | null;
-  painAreas: PainEntry[];
+  painAreas: PainAreas;
   chiefComplaint: string;
   rom: { joint: string; measuredROM: string; normalRange: string }[];
   postural: string;
@@ -48,7 +42,7 @@ export interface NoteData {
 
 export const EMPTY_NOTE: Omit<NoteData, "id" | "savedAt"> = {
   patientName: "", chartNo: "", birthDate: "", gender: "", diagnosis: "", pmh: "",
-  painScore: null, painAreas: [], chiefComplaint: "", rom: [],
+  painScore: null, painAreas: {}, chiefComplaint: "", rom: [],
   postural: "", palpation: "", specialTest: "", treatment: "", homeExercise: "",
   noteDate: "", therapist: null, therapistUid: "",
 };

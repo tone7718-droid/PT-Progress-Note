@@ -71,7 +71,8 @@ export function isNoteContentful(data: Partial<Omit<NoteData, "id" | "savedAt">>
   if (data.treatment?.trim()) return true;
   if (data.homeExercise?.trim()) return true;
   if (typeof data.painScore === "number") return true;
-  if (Array.isArray(data.painAreas) && data.painAreas.length > 0) return true;
+  // painAreas: 신규 Record<string, number> (구버전 배열 draft 도 Object.keys 로 안전 처리)
+  if (data.painAreas && Object.keys(data.painAreas).length > 0) return true;
   if (Array.isArray(data.rom) && data.rom.some((r) => r.joint?.trim() || r.measuredROM?.trim())) return true;
   return false;
 }

@@ -12,7 +12,7 @@ const sampleNote = (overrides: Partial<NoteData> = {}): NoteData => ({
   diagnosis: "",
   pmh: "",
   painScore: null,
-  painAreas: [],
+  painAreas: {},
   chiefComplaint: "",
   rom: [],
   postural: "",
@@ -107,6 +107,35 @@ describe("localDataService — notes CRUD", () => {
     await ds.upsertNote(sampleNote({ id: "a" }));
     await ds.deleteNotes(["does-not-exist"]);
     expect(await ds.fetchNotes()).toHaveLength(1);
+  });
+});
+
+describe("localDataService — painAreas migration", () => {
+  it("migrates legacy PainEntry[] to Record<string, number> on fetch", async () => {
+    const legacyPainAreas = [
+      { view: "anterior", region: "우측 대흉근", painLevel: 2 },
+      { view: "posterior", region: "좌측 광배근", painLevel: 3 },
+    ];
+    // 구버전 형식을 강제로 주입 (현재 타입은 Record 라 캐스팅)
+    await ds.upsertNote(sampleNote({ id: "legacy", painAreas: legacyPainAreas as never }));
+
+    const all = await ds.fetchNotes();
+    const note = all.find((n) => n.id === "legacy")!;
+    expect(note.painAreas).toEqual({ "우측 대흉근": 2, "좌측 광배근": 3 });
+  });
+
+  it("clears unconvertible legacy string[] painAreas", async () => {
+    await ds.upsertNote(sampleNote({ id: "veryold", painAreas: ["head", "neck"] as never }));
+    const all = await ds.fetchNotes();
+    expect(all.find((n) => n.id === "veryold")!.painAreas).toEqual({});
+  });
+
+  it("drops out-of-range pain levels from Record form", async () => {
+    await ds.upsertNote(
+      sampleNote({ id: "rec", painAreas: { "우측 어깨": 2, "좌측 무릎": 9, "허리": 0 } as never })
+    );
+    const all = await ds.fetchNotes();
+    expect(all.find((n) => n.id === "rec")!.painAreas).toEqual({ "우측 어깨": 2 });
   });
 });
 

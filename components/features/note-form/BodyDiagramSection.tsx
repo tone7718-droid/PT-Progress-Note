@@ -1,34 +1,23 @@
 import * as React from "react";
 import { useFormContext, Controller } from "react-hook-form";
-import type { NoteData, PainEntry, PainLevel } from "@/types";
+import type { NoteData, PainAreas } from "@/types";
 import { Card } from "@/components/ui/Card";
 import BodyDiagram from "@/components/BodyDiagram";
 
-const PAIN_LABEL: Record<PainLevel, string> = { 1: "경도", 2: "중등도", 3: "중증" };
+const PAIN_LABEL: Record<number, string> = { 1: "경도", 2: "중등도", 3: "중증" };
 
-/** 인쇄/PDF 모드용 텍스트 요약 */
-function summarizeForPrint(entries: PainEntry[]): string {
+/** 인쇄/PDF 모드용 텍스트 요약 — 강도 내림차순, 같은 강도는 부위명 가나다순 */
+function summarizeForPrint(areas: PainAreas): string {
+  const entries = Object.entries(areas).filter(([, lv]) => lv >= 1 && lv <= 3);
   if (entries.length === 0) return "";
-  const sorted = [...entries].sort((a, b) => {
-    if (b.painLevel !== a.painLevel) return b.painLevel - a.painLevel;
-    if (a.view !== b.view) return a.view === "anterior" ? -1 : 1;
-    return a.region.localeCompare(b.region, "ko");
-  });
-  const seen = new Set<string>();
-  const dedup = sorted.filter((e) => {
-    const k = `${e.view}::${e.region}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-  return dedup
-    .map((e) => `[${e.view === "anterior" ? "전면" : "후면"}] ${e.region} (${PAIN_LABEL[e.painLevel]})`)
-    .join(", ");
+  entries.sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0], "ko"));
+  return entries.map(([region, lv]) => `${region} (${PAIN_LABEL[lv]})`).join(", ");
 }
 
 export function BodyDiagramSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
   const { control, watch } = useFormContext<NoteData>();
-  const painAreas = (watch("painAreas") as PainEntry[] | undefined) || [];
+  const painAreas = (watch("painAreas") as PainAreas | undefined) || {};
+  const painCount = Object.keys(painAreas).length;
 
   const sectionTitleCls = isGeneratingPdf
     ? "text-lg font-bold text-black border-b-2 border-gray-400 pb-1 mb-2 mt-4"
@@ -45,15 +34,15 @@ export function BodyDiagramSection({ isGeneratingPdf }: { isGeneratingPdf: boole
           control={control}
           render={({ field }) => (
             <BodyDiagram
-              value={(field.value as PainEntry[] | undefined) || []}
-              onChange={field.onChange}
+              painAreas={(field.value as PainAreas | undefined) || {}}
+              setPainAreas={field.onChange}
             />
           )}
         />
       </div>
       {/* PDF 및 인쇄 모드에선 텍스트 표출 */}
       <div className={`${isGeneratingPdf ? "block" : "hidden print:block mt-2"}`}>
-        {painAreas.length > 0 ? (
+        {painCount > 0 ? (
           <div className={`${isGeneratingPdf ? "py-2 font-medium text-black" : "p-3 border-2 border-gray-300 rounded-xl bg-gray-50 font-bold text-gray-800 text-base"}`}>
             {printSummary}
           </div>
