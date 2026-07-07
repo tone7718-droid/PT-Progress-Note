@@ -99,13 +99,13 @@ export default function UpdateChecker() {
   if (phase === "idle" || phase === "checking" || phase === "up-to-date") return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-[250] max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+    <div className="fixed bottom-6 right-6 z-[250] max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
       <div className="flex items-start justify-between px-5 pt-4 pb-2">
-        <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+        <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
           {phase === "ready" ? (
-            <CheckCircle size={18} className="text-green-600" />
+            <CheckCircle size={18} className="text-green-600 dark:text-green-400" />
           ) : (
-            <Download size={18} className="text-blue-600" />
+            <Download size={18} className="text-blue-600 dark:text-blue-400" />
           )}
           {phase === "available" && "새 버전 사용 가능"}
           {phase === "downloading" && "업데이트 다운로드 중"}
@@ -114,7 +114,7 @@ export default function UpdateChecker() {
         </h3>
         <button
           onClick={() => setDismissed(true)}
-          className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-700 transition-colors"
+          className="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
           aria-label="닫기"
         >
           <X size={16} />
@@ -124,11 +124,11 @@ export default function UpdateChecker() {
       <div className="px-5 pb-5">
         {phase === "available" && info && (
           <>
-            <p className="text-xs text-gray-600 mb-1">
+            <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">
               <span className="font-bold">v{info.version}</span> 을 사용할 수 있습니다.
             </p>
             {info.notes && (
-              <p className="text-xs text-gray-500 mb-3 line-clamp-3 whitespace-pre-wrap">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-3 whitespace-pre-wrap">
                 {info.notes}
               </p>
             )}
@@ -141,7 +141,7 @@ export default function UpdateChecker() {
               </button>
               <button
                 onClick={() => setDismissed(true)}
-                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
+                className="px-3 py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 text-sm font-bold rounded-xl transition-colors"
               >
                 나중에
               </button>
@@ -151,7 +151,7 @@ export default function UpdateChecker() {
 
         {phase === "downloading" && (
           <>
-            <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+            <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2 mb-2">
               <div
                 className="bg-blue-600 h-2 rounded-full transition-all duration-200"
                 style={{
@@ -162,26 +162,26 @@ export default function UpdateChecker() {
                 }}
               />
             </div>
-            <p className="text-xs text-gray-500 font-medium">
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
               {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}
             </p>
           </>
         )}
 
         {phase === "ready" && (
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-gray-600 dark:text-gray-300">
             설치가 완료되어 앱이 곧 재시작됩니다.
           </p>
         )}
 
         {phase === "error" && (
           <>
-            <p className="text-xs text-red-600 bg-red-50 p-2 rounded-lg mb-2 break-all">
+            <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded-lg mb-2 break-all">
               {errorMsg || "알 수 없는 오류"}
             </p>
             <button
               onClick={checkForUpdate}
-              className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition-colors"
+              className="w-full py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 text-sm font-bold rounded-xl transition-colors"
             >
               다시 시도
             </button>

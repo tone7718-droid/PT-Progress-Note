@@ -1,12 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono } from "next/font/google";
+// Pretendard 가변 폰트 (한글) — dynamic subset 을 번들에 포함해 셀프호스팅.
+// CDN 을 쓰지 않으므로 Tauri/Android 오프라인 환경에서도 동일하게 렌더링됨.
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./globals.css";
 import { THEME_INIT_SCRIPT } from "@/lib/themeScript";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -42,9 +40,7 @@ export default function RootLayout({
         {/* hydration 전에 html.dark 미리 붙여 FOUC 차단. localStorage["pt-theme"] 참조. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistMono.variable} antialiased`}>
         {/* 서비스 워커: 기존 등록이 있으면 언레지스터 (디버깅용 — 필요 시 복원) */}
         <script
           dangerouslySetInnerHTML={{

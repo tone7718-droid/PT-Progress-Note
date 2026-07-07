@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { EMPTY_NOTE, type NoteData, type Therapist } from "@/types";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas-pro";
-import { Save, X as XIcon, Clock, Copy } from "lucide-react";
+import { Save, X as XIcon, Clock, Copy, Printer, FileDown, ChevronDown, Sparkles } from "lucide-react";
 import { loadDraft, saveDraft, clearDraft, isNoteContentful, formatRelativeTime, formatClockTime, type DraftNoteData } from "@/lib/draftNote";
 
 import { PatientInfoSection } from "./features/note-form/PatientInfoSection";
@@ -312,8 +312,8 @@ export default function ProgressNoteForm() {
                   aria-label="출력 옵션 열기"
                   className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md hover:shadow-xl transition-all"
                 >
-                  📄 출력
-                  <span className={`text-xs transition-transform ${outputMenuOpen ? 'rotate-180' : ''}`}>▾</span>
+                  <Printer size={18} /> 출력
+                  <ChevronDown size={16} className={`transition-transform ${outputMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {outputMenuOpen && (
                   <div role="menu" className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-150">
@@ -323,7 +323,7 @@ export default function ProgressNoteForm() {
                       onClick={() => { setOutputMenuOpen(false); handleDownloadPDF(); }}
                       className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-bold transition-colors"
                     >
-                      <span>📄</span> PDF로 저장
+                      <FileDown size={18} className="text-blue-600 dark:text-blue-400" /> PDF로 저장
                     </button>
                     <button
                       type="button"
@@ -331,7 +331,7 @@ export default function ProgressNoteForm() {
                       onClick={() => { setOutputMenuOpen(false); window.print(); }}
                       className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-bold border-t border-gray-100 dark:border-slate-700 transition-colors"
                     >
-                      <span>🖨️</span> 인쇄
+                      <Printer size={18} className="text-gray-500 dark:text-gray-400" /> 인쇄
                     </button>
                   </div>
                 )}
@@ -401,8 +401,8 @@ export default function ProgressNoteForm() {
                     </span>
                   </div>
                 ) : (
-                  <span className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 rounded-full shadow-sm ml-auto text-xs sm:text-sm">
-                    {copyFlash ? "📋 노트 복사 완료 — 환자/내용 수정 후 저장" : "✨ 새 노트 작성"}
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-5 sm:py-2.5 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 rounded-full shadow-sm ml-auto text-xs sm:text-sm">
+                    {copyFlash ? <><Copy size={14} className="shrink-0" /> 노트 복사 완료 — 환자/내용 수정 후 저장</> : <><Sparkles size={14} className="shrink-0" /> 새 노트 작성</>}
                   </span>
                 )}
               </div>
@@ -422,7 +422,7 @@ export default function ProgressNoteForm() {
                 <div className="w-full flex justify-between items-center px-1">
                   <span className={`font-bold ${isGeneratingPdf ? 'text-base text-black' : 'text-lg text-gray-700 dark:text-gray-200 print:text-base'}`}>담당 치료사:</span>
                   {displayTherapist ? (
-                    <span className={`font-extrabold ${isGeneratingPdf ? 'text-lg text-black' : 'text-xl text-gray-900 dark:text-gray-100 print:text-lg'}`}>
+                    <span className={`font-bold ${isGeneratingPdf ? 'text-lg text-black' : 'text-xl text-gray-900 dark:text-gray-100 print:text-lg'}`}>
                       {displayTherapist.name} <span className="font-mono text-gray-500 dark:text-gray-400 tracking-tight text-sm">({displayTherapist.id})</span>
                     </span>
                   ) : (
@@ -457,9 +457,9 @@ export default function ProgressNoteForm() {
         {!isGeneratingPdf && (
           <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:bottom-8 sm:right-8 z-50 flex items-center justify-end gap-3 print:hidden">
             <button type="button" onClick={handleDownloadPDF} className="flex-1 sm:hidden flex items-center justify-center gap-2 px-5 py-4 bg-gray-800 hover:bg-gray-900 active:bg-gray-950 text-white font-bold text-lg rounded-2xl shadow-lg transition-all focus:outline-none focus:ring-4 focus:ring-gray-300">
-              📄 PDF
+              <FileDown size={20} /> PDF
             </button>
-            <button type="submit" disabled={isSaving} className="flex-[2] sm:flex-none flex items-center justify-center gap-2 sm:gap-3 px-6 sm:px-8 py-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-blue-400 text-white font-extrabold text-lg sm:text-xl rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-blue-500/50 transform sm:hover:-translate-y-2 select-none">
+            <button type="submit" disabled={isSaving} className="flex-[2] sm:flex-none flex items-center justify-center gap-2 sm:gap-3 px-6 sm:px-8 py-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-blue-400 text-white font-bold text-lg sm:text-xl rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-blue-500/50 transform sm:hover:-translate-y-2 select-none">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-7 sm:w-7" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M17 3H5a2 2 0 00-2 2v10a2 2 0 002 2h10l4-4V5a2 2 0 00-2-2zm-5 12H7v-4h5v4zm4-6H4V5h12v4z" />
               </svg>

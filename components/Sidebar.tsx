@@ -527,7 +527,7 @@ export default function Sidebar() {
                 <label htmlFor="backup-passphrase2" className="sr-only">백업 파일 암호 확인</label>
                 <input id="backup-passphrase2" type="password" value={backupPassphrase2} onChange={(e) => { setBackupPassphrase2(e.target.value); setExportPwError(""); }} placeholder="백업 암호 다시 입력"
                   className="w-full p-3.5 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10 font-bold tracking-widest outline-none mb-2" />
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-3 leading-snug">⚠️ 이 암호를 잊으면 백업 파일을 복원할 수 없습니다. 안전한 곳에 따로 기록해두세요.</p>
+                <p className="flex items-start gap-1.5 text-[11px] text-gray-400 dark:text-gray-500 mb-3 leading-snug"><AlertTriangle size={12} className="shrink-0 mt-0.5 text-amber-500" /> 이 암호를 잊으면 백업 파일을 복원할 수 없습니다. 안전한 곳에 따로 기록해두세요.</p>
               </>
             )}
 
@@ -536,7 +536,7 @@ export default function Sidebar() {
               <span className="text-xs font-bold text-gray-600 dark:text-gray-300">암호화 없이 내보내기 (권장하지 않음)</span>
             </label>
             {exportPlain && (
-              <p className="text-amber-600 dark:text-amber-400 mb-4 font-bold text-xs text-center bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">⚠️ 환자정보가 평문 JSON 으로 저장됩니다.<br />파일이 유출되면 누구나 열람할 수 있습니다.</p>
+              <p className="flex items-center justify-center gap-1.5 text-amber-600 dark:text-amber-400 mb-4 font-bold text-xs text-center bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2"><AlertTriangle size={14} className="shrink-0" /><span>환자정보가 평문 JSON 으로 저장됩니다.<br />파일이 유출되면 누구나 열람할 수 있습니다.</span></p>
             )}
 
             {exportPwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{exportPwError}</p>}

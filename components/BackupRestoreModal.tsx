@@ -62,7 +62,7 @@ export default function BackupRestoreModal({ onClose }: BackupRestoreModalProps)
       <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
         {/* 헤더 */}
         <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
-          <h2 className="text-xl font-black text-gray-900 dark:text-gray-100 flex items-center gap-2">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <History className="text-blue-600 dark:text-blue-400" size={24} /> 자동 백업 복원
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition-colors text-gray-500 dark:text-gray-400" aria-label="모달 닫기"><X size={22} /></button>

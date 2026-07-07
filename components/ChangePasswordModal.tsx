@@ -89,7 +89,7 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200 print:hidden">
       <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
-          <h2 className="text-lg font-black text-gray-900 dark:text-gray-100 flex items-center gap-2">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <KeyRound size={20} className="text-blue-600 dark:text-blue-400" /> 비밀번호 변경
           </h2>
           <button

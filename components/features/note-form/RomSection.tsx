@@ -116,7 +116,7 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
     <Card isPdfMode={isGeneratingPdf}>
       <h2 className={sectionTitleCls}>4. 관절 가동범위 (ROM &amp; Flexibility)</h2>
 
-      <div className={cn("bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border-2 border-slate-100 dark:border-slate-800 p-3 sm:p-6 shadow-sm min-h-[180px] sm:min-h-[250px]", isGeneratingPdf && "border-none shadow-none p-0")}>
+      <div className={cn("bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border-2 border-gray-100 dark:border-slate-800 p-3 sm:p-6 shadow-sm min-h-[180px] sm:min-h-[250px]", isGeneratingPdf && "border-none shadow-none p-0")}>
         <div className="hidden lg:grid lg:grid-cols-[1fr_1.5fr_48px] gap-6 mb-4 px-2">
           <span className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">관절 동작 선택</span>
           <span className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">측정 ROM & 정상 범위</span>
@@ -276,7 +276,7 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
             <button
               type="button"
               onClick={() => append({ joint: "", measuredROM: "", normalRange: "" })}
-              className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200 font-extrabold px-4 py-2.5 sm:px-8 sm:py-3.5 rounded-xl sm:rounded-2xl hover:bg-blue-50 dark:hover:bg-blue-900/30 border-2 border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-all focus:ring-4 focus:ring-blue-500/20 active:scale-95 shadow-sm text-sm sm:text-base"
+              className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200 font-bold px-4 py-2.5 sm:px-8 sm:py-3.5 rounded-xl sm:rounded-2xl hover:bg-blue-50 dark:hover:bg-blue-900/30 border-2 border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-all focus:ring-4 focus:ring-blue-500/20 active:scale-95 shadow-sm text-sm sm:text-base"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />

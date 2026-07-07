@@ -37,7 +37,7 @@ export default function FaceScale({ value: controlledValue, onChange }: FaceScal
 
   return (
     <div>
-      <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-3 sm:mb-8">
+      <h3 className="text-sm sm:text-base font-bold text-gray-800 dark:text-gray-100 mb-3 sm:mb-8">
         통증 정도 (VAS 0~10)
       </h3>
 
@@ -50,12 +50,12 @@ export default function FaceScale({ value: controlledValue, onChange }: FaceScal
                 type="button"
                 onClick={() => handleSelect(item.value)}
                 className={`
-                  relative flex items-center justify-center w-9 h-9 sm:w-14 sm:h-14 rounded-full text-base sm:text-2xl font-black
+                  relative flex items-center justify-center w-9 h-9 sm:w-14 sm:h-14 rounded-full text-base sm:text-2xl font-bold
                   transition-all duration-300 ease-out cursor-pointer
                   focus:outline-none focus:ring-4 focus:ring-opacity-50
                   ${isSelected
                     ? "text-white shadow-xl scale-125 z-10"
-                    : "bg-white text-gray-700 border-2 border-gray-200 hover:bg-gray-50 hover:scale-110 shadow-sm"
+                    : "bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 border-2 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 hover:scale-110 shadow-sm"
                   }
                 `}
                 style={isSelected ? { 
@@ -74,18 +74,23 @@ export default function FaceScale({ value: controlledValue, onChange }: FaceScal
       {/* 선택된 값 요약 */}
       <div className="mt-3 sm:mt-10 h-10 flex items-center">
         {selected !== null && selected !== undefined ? (
+          /* 색상 점(dot)으로 통증색을 표시하고 텍스트는 표준 전경색 사용 —
+             밝은 통증색(노랑 등)을 글자색으로 쓰면 라이트 배경에서 가독성이 낮음 */
           <div
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-base font-bold transition-all duration-300"
+            className="inline-flex items-center gap-2.5 px-5 py-3 rounded-xl text-base font-bold text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-slate-800 transition-all duration-300"
             style={{
-              backgroundColor: `${scaleData.find(d => d.value === selected)?.color}15`,
-              color: scaleData.find(d => d.value === selected)?.color,
-              border: `2px solid ${scaleData.find(d => d.value === selected)?.color}44`,
+              border: `2px solid ${scaleData.find(d => d.value === selected)?.color}88`,
             }}
           >
+            <span
+              aria-hidden
+              className="w-3.5 h-3.5 rounded-full shrink-0"
+              style={{ backgroundColor: scaleData.find(d => d.value === selected)?.color }}
+            />
             선택된 통증 점수: {selected}점 — {scaleData.find(d => d.value === selected)?.label}
           </div>
         ) : (
-          <div className="text-gray-400 italic text-sm">
+          <div className="text-gray-400 dark:text-gray-500 italic text-sm">
             숫자를 클릭하여 통증 정도를 선택해주세요.
           </div>
         )}
