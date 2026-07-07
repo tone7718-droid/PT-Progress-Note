@@ -1,11 +1,11 @@
 name: Release Android (Capacitor APK)
 
-# Capacitor Android 빌드 — 디버그 APK 를 GitHub Release 에 첨부.
-# 서명된 릴리즈 APK 를 만들려면 keystore secret 추가 후 별도 단계 필요 (주석 참고).
+# Capacitor Android 빌드 — 디버그 APK 를 workflow artifact 로만 업로드 (내부 QA용).
+# 디버그 서명 APK 는 debuggable + 공개 디버그 키 서명이라 공개 Release 에 첨부하지 않는다.
+# 공개 배포용 서명 릴리즈 APK 는 keystore secret 등록 후 아래 주석 블록을 활성화할 것.
 #
 # 트리거:
 #   - workflow_dispatch — 수동
-#   - 태그 푸시 (선택). 데스크톱 워크플로우와 동시에 돌리고 싶으면 같이 켤 것.
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ on:
         required: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-android:
@@ -65,15 +65,18 @@ jobs:
       #   run: ./gradlew assembleRelease
       #   working-directory: android
 
+      # 디버그 APK 는 내부 확인용 artifact 로만 보관 (공개 Release 첨부 금지 —
+      # debuggable 빌드 + 공용 디버그 키 서명은 재서명/변조에 취약).
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: pt-note-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Attach APK to release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag }}
-          files: android/app/build/outputs/apk/debug/app-debug.apk
-          fail_on_unmatched_files: false
+      # 서명 릴리즈 APK 를 Release 에 첨부하려면 keystore secret 등록 후
+      # 위의 assembleRelease 블록과 함께 아래를 활성화:
+      # - name: Attach signed APK to release
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     tag_name: ${{ inputs.tag }}
+      #     files: android/app/build/outputs/apk/release/app-release.apk

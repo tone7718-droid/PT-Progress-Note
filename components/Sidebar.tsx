@@ -59,6 +59,11 @@ export default function Sidebar() {
   /* ── 데이터 내보내기/가져오기 ── */
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /* 내보내기 전 비밀번호 재확인 (환자정보 전체 덤프이므로 재인증 필수) */
+  const [showExportPwConfirm, setShowExportPwConfirm] = useState(false);
+  const [exportPw, setExportPw] = useState("");
+  const [exportPwError, setExportPwError] = useState("");
+
   const handleExportData = async () => {
     try {
       const json = await exportData();
@@ -71,6 +76,31 @@ export default function Sidebar() {
       URL.revokeObjectURL(url);
     } catch {
       alert("데이터 내보내기에 실패했습니다.");
+    }
+  };
+
+  const handleExportConfirm = async () => {
+    if (!therapist || !therapist.id) {
+      setExportPwError("로그인 정보를 확인할 수 없습니다.");
+      return;
+    }
+    setExportPwError("");
+    try {
+      const ok = await Promise.race<boolean>([
+        reauthenticate(therapist.id, exportPw),
+        new Promise<boolean>((_, rej) =>
+          setTimeout(() => rej(new Error("비밀번호 확인 시간 초과")), 10000)
+        ),
+      ]);
+      if (!ok) {
+        setExportPwError("비밀번호가 일치하지 않습니다.");
+        return;
+      }
+      setShowExportPwConfirm(false);
+      setExportPw("");
+      await handleExportData();
+    } catch (err) {
+      setExportPwError((err as Error)?.message ?? "확인 중 오류가 발생했습니다.");
     }
   };
 
@@ -198,12 +228,22 @@ export default function Sidebar() {
             <>
               <div className="fixed inset-0 z-[50]" onClick={() => setShowDropdown(false)} />
               <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-700 py-2 z-[60] animate-in fade-in slide-in-from-top-2 duration-150">
-                <button onClick={() => { setShowLoginModal(true); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"><LogIn size={18} /> 로그인</button>
-                <button onClick={() => { setShowTherapistModal(true); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-700 dark:hover:text-green-300 transition-colors"><UserPlus size={18} /> 치료사 등록 / 관리</button>
-                <button onClick={() => { setShowMacroModal(true); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"><Sparkles size={18} /> 매크로 관리 (/도수1~20)</button>
-                <hr className="my-1 border-gray-100 dark:border-slate-700" />
-                <button onClick={() => { handleExportData(); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"><Download size={18} /> 데이터 내보내기</button>
-                <button onClick={() => { fileInputRef.current?.click(); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-orange-900/30 hover:text-orange-700 dark:hover:text-orange-300 transition-colors"><Upload size={18} /> 데이터 가져오기</button>
+                {/* 환자정보·계정을 다루는 메뉴는 로그인 상태에서만 노출.
+                    (localStorage 특성상 근본 방어는 아니지만, UI 수준 접근 통제) */}
+                {!therapist && (
+                  <button onClick={() => { setShowLoginModal(true); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"><LogIn size={18} /> 로그인</button>
+                )}
+                {isMaster && (
+                  <button onClick={() => { setShowTherapistModal(true); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-700 dark:hover:text-green-300 transition-colors"><UserPlus size={18} /> 치료사 등록 / 관리</button>
+                )}
+                {therapist && (
+                  <>
+                    <button onClick={() => { setShowMacroModal(true); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"><Sparkles size={18} /> 매크로 관리 (/도수1~20)</button>
+                    <hr className="my-1 border-gray-100 dark:border-slate-700" />
+                    <button onClick={() => { setShowExportPwConfirm(true); setExportPw(""); setExportPwError(""); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"><Download size={18} /> 데이터 내보내기</button>
+                    <button onClick={() => { fileInputRef.current?.click(); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-orange-900/30 hover:text-orange-700 dark:hover:text-orange-300 transition-colors"><Upload size={18} /> 데이터 가져오기</button>
+                  </>
+                )}
               </div>
             </>
           )}
@@ -377,6 +417,25 @@ export default function Sidebar() {
             <div className="flex gap-3">
               <button onClick={() => { setShowPwConfirm(false); setDeletePw(""); }} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
               <button onClick={handleDeleteStep2Confirm} className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg transition-colors">삭제 확인</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 내보내기 전 비밀번호 재확인 ── */}
+      {showExportPwConfirm && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">본인 확인 비밀번호</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-2 font-medium text-sm text-center">환자 정보 전체가 포함된 백업 파일을<br />내보내려면 비밀번호를 다시 입력해주세요.</p>
+            <p className="text-amber-600 dark:text-amber-400 mb-6 font-bold text-xs text-center">⚠️ 백업 파일의 환자정보는 암호화되지 않습니다.<br />안전한 위치에만 보관하세요.</p>
+            <label htmlFor="confirm-export-pw" className="sr-only">비밀번호 입력</label>
+            <input id="confirm-export-pw" type="password" value={exportPw} onChange={(e) => { setExportPw(e.target.value); setExportPwError(""); }} placeholder="비밀번호 입력"
+              className="w-full p-4 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 text-center font-bold tracking-widest outline-none mb-3" autoFocus />
+            {exportPwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{exportPwError}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => { setShowExportPwConfirm(false); setExportPw(""); }} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
+              <button onClick={handleExportConfirm} className="flex-1 py-3.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-lg transition-colors">내보내기</button>
             </div>
           </div>
         </div>

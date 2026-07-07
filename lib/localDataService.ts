@@ -37,7 +37,9 @@ function sanitizeString(val: unknown): string {
   if (typeof val !== "string") return "";
   return val
     .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/on\w+\s*=/gi, "")
+    // 따옴표가 뒤따르는 실제 인라인 이벤트 속성(onclick=" 등)만 제거.
+    // 임상 문구("onset = 3일 전", "pronation = 80도")를 훼손하지 않도록 좁게 매칭.
+    .replace(/\bon\w+\s*=\s*["']/gi, "")
     .slice(0, MAX_FIELD_LENGTH);
 }
 
@@ -336,6 +338,10 @@ export async function createTherapistViaEdgeFunction(
     throw new Error("ID 형식이 올바르지 않습니다 (PT-001 ~ PT-999).");
   }
 
+  // 정책 방어 검증 — 등록/변경 경로 모두 동일 정책 (UI 우회 대비 단일 소스)
+  const policyError = validateNewPassword(password);
+  if (policyError) throw new Error(policyError);
+
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
   if (therapists.some((t) => t.id === loginId && !t.resigned)) {
     throw new Error("이미 사용 중인 ID입니다.");
@@ -377,6 +383,34 @@ export async function deleteTherapistDb(uid: string): Promise<void> {
   write(THERAPISTS_KEY, therapists.filter((t) => t.uid !== uid));
 }
 
+/**
+ * master 가 다른 치료사의 비밀번호를 재설정.
+ * v3 백업에서 복원된 "비밀번호 미설정(로그인 잠금)" 계정을 활성화하는 유일한 경로.
+ */
+export async function resetTherapistPasswordDb(
+  uid: string,
+  newPassword: string
+): Promise<void> {
+  const session = read<Therapist | null>(SESSION_KEY, null);
+  if (!session || session.role !== "master") {
+    throw new Error("마스터 계정만 비밀번호를 재설정할 수 있습니다.");
+  }
+
+  const policyError = validateNewPassword(newPassword);
+  if (policyError) throw new Error(policyError);
+
+  const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  const target = therapists.find((t) => t.uid === uid);
+  if (!target) throw new Error("해당 치료사를 찾을 수 없습니다.");
+  if (target.resigned) throw new Error("퇴사 처리된 계정은 재설정할 수 없습니다.");
+
+  const passwordHash = await hashPassword(newPassword);
+  write(
+    THERAPISTS_KEY,
+    therapists.map((t) => (t.uid === uid ? { ...t, passwordHash } : t))
+  );
+}
+
 export async function updateTherapistPasswordViaAuth(
   newPassword: string
 ): Promise<void> {
@@ -399,12 +433,20 @@ export async function updateTherapistPasswordViaAuth(
    Export / Import
    ══════════════════════════════════════════ */
 
-/** 내보내기: 노트를 복호화한 평문 JSON 반환 */
+/**
+ * 내보내기: 노트를 복호화한 평문 JSON 반환.
+ * 보안: 비밀번호 해시는 파일에 포함하지 않는다 (백업 파일은 공유·유출되기 쉬움).
+ * 해시 없이 복원된 치료사 계정은 로그인 불가 상태이며, master 가
+ * "비밀번호 재설정"으로 활성화해야 한다 (v3 부터).
+ */
 export async function exportAllData(): Promise<string> {
   const notes = await readNotes(); // 복호화된 평문
-  const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []).map((t) => ({
+    ...t,
+    passwordHash: "",
+  }));
   return JSON.stringify(
-    { version: 2, exportedAt: new Date().toISOString(), notes, therapists },
+    { version: 3, exportedAt: new Date().toISOString(), notes, therapists },
     null,
     2
   );
@@ -428,7 +470,10 @@ export async function importNotes(notes: NoteData[]): Promise<number> {
  * - uid 가 이미 존재하면 스킵 (중복 방지)
  * - 마스터 계정은 기기별 1개 유지 — 백업의 마스터는 스킵
  * - 활성 치료사와 로그인 ID 가 충돌하면 스킵
- * - passwordHash 를 그대로 복원하므로 새 기기에서 기존 비밀번호로 로그인 가능
+ * - v3 백업(해시 제거됨)의 계정은 passwordHash="" 로 복원됨 → 로그인 불가
+ *   상태이며 master 의 "비밀번호 재설정"으로 활성화 (verifyPassword 는
+ *   빈 해시를 항상 거부)
+ * - v2 이하 구버전 백업의 해시는 그대로 복원 (하위 호환 — 기존 비밀번호 유지)
  */
 export async function importTherapists(records: TherapistRecord[]): Promise<number> {
   if (!Array.isArray(records) || records.length === 0) return 0;
