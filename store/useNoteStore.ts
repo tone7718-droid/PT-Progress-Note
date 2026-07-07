@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { NoteData } from "@/types";
 import * as ds from "@/lib/localDataService"; // 로컬 전환용
+import type { BackupSnapshot } from "@/lib/autoBackup";
 import { useAuthStore } from "./useAuthStore";
 import { genId } from "@/lib/genId";
 
@@ -17,7 +18,13 @@ interface NoteStore {
   deleteNotes: (ids: string[]) => Promise<void>;
   transferNotes: (fromUid: string, toUid: string, toName: string, toLoginId: string | null) => Promise<void>;
   exportData: () => Promise<string>;
-  importData: (json: string) => Promise<{ notesCount: number; therapistsCount: number }>;
+  exportDataEncrypted: (passphrase: string) => Promise<string>;
+  importData: (
+    json: string,
+    passphrase?: string
+  ) => Promise<{ notesCount: number; therapistsCount: number; skippedCount: number }>;
+  listBackups: () => Promise<BackupSnapshot[]>;
+  restoreBackup: (at: string) => Promise<number>;
   initSync: () => void;
 }
 
@@ -136,12 +143,21 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     return ds.exportAllData();
   },
 
-  importData: async (json) => {
-    const data = JSON.parse(json);
+  exportDataEncrypted: async (passphrase) => {
+    return ds.exportAllDataEncrypted(passphrase);
+  },
+
+  importData: async (json, passphrase) => {
+    // 암호화 백업이면 먼저 passphrase 로 복호화해 평문 백업 JSON 을 얻는다
+    const plainJson = ds.isEncryptedBackup(json)
+      ? await ds.decryptBackupText(json, passphrase ?? "")
+      : json;
+
+    const data = JSON.parse(plainJson);
     if (!data.notes || !Array.isArray(data.notes)) throw new Error("잘못된 데이터 형식입니다.");
 
     // import 직전 스냅샷은 ds.importNotes 내부에서 1회 수행 (중복 방지)
-    const notesCount = await ds.importNotes(data.notes);
+    const { added: notesCount, skippedInvalid: skippedCount } = await ds.importNotes(data.notes);
     const therapistsCount = Array.isArray(data.therapists)
       ? await ds.importTherapists(data.therapists)
       : 0;
@@ -152,6 +168,16 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       useAuthStore.getState().setTherapists(await ds.fetchTherapists());
     }
 
-    return { notesCount, therapistsCount };
+    return { notesCount, therapistsCount, skippedCount };
+  },
+
+  listBackups: async () => {
+    return ds.listAutoBackups();
+  },
+
+  restoreBackup: async (at) => {
+    const restored = await ds.restoreAutoBackup(at);
+    set({ notes: await ds.fetchNotes(), selectedNoteId: null });
+    return restored;
   },
 }));

@@ -60,7 +60,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   registerTherapist: async (loginId, name, password) => {
-    const newRecord = await ds.createTherapistViaEdgeFunction(loginId, name, password);
+    const newRecord = await ds.createTherapist(loginId, name, password);
     set((state) => ({ therapists: [...state.therapists, newRecord] }));
   },
 

@@ -3,13 +3,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useNoteStore } from "@/store/useNoteStore";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Menu, Search, Plus, Trash2, UserPlus, LogIn, ChevronDown, ChevronRight, ArrowRightLeft, Shield, Download, Upload, Sparkles, KeyRound, AlertTriangle } from "lucide-react";
+import { Menu, Search, Plus, Trash2, UserPlus, LogIn, ChevronDown, ChevronRight, ArrowRightLeft, Shield, Download, Upload, Sparkles, KeyRound, AlertTriangle, TrendingUp, History } from "lucide-react";
 import LoginModal from "./LoginModal";
 import TherapistManagementModal from "./TherapistManagementModal";
 import MacroManagementModal from "./MacroManagementModal";
 import ChangePasswordModal from "./ChangePasswordModal";
+import PatientTrendChart from "./PatientTrendChart";
+import BackupRestoreModal from "./BackupRestoreModal";
 import { verifyPassword } from "./hashUtils";
 import { DEFAULT_PASSWORD } from "@/lib/passwordPolicy";
+import { isEncryptedBackup } from "@/lib/localDataService";
 
 export default function Sidebar() {
   const notes = useNoteStore((s) => s.notes);
@@ -19,6 +22,7 @@ export default function Sidebar() {
   const deleteNotes = useNoteStore((s) => s.deleteNotes);
   const transferNotes = useNoteStore((s) => s.transferNotes);
   const exportData = useNoteStore((s) => s.exportData);
+  const exportDataEncrypted = useNoteStore((s) => s.exportDataEncrypted);
   const importData = useNoteStore((s) => s.importData);
   
   const therapist = useAuthStore((s) => s.therapist);
@@ -47,6 +51,10 @@ export default function Sidebar() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showResignedFolder, setShowResignedFolder] = useState(false);
+  const [showBackupRestore, setShowBackupRestore] = useState(false);
+
+  /* ── 환자 추이 차트 ── */
+  const [trendChartData, setTrendChartData] = useState<{ patientId?: string; patientName: string; chartNo: string } | null>(null);
 
   /* ── 삭제 2단계 비밀번호 확인 ── */
   const [showPwConfirm, setShowPwConfirm] = useState(false);
@@ -59,30 +67,46 @@ export default function Sidebar() {
   /* ── 데이터 내보내기/가져오기 ── */
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /* 내보내기 전 비밀번호 재확인 (환자정보 전체 덤프이므로 재인증 필수) */
+  /* 내보내기 전 비밀번호 재확인 (환자정보 전체 덤프이므로 재인증 필수)
+     + 백업 파일 암호(passphrase) 설정. 평문 내보내기는 명시적으로 선택해야 함. */
   const [showExportPwConfirm, setShowExportPwConfirm] = useState(false);
   const [exportPw, setExportPw] = useState("");
   const [exportPwError, setExportPwError] = useState("");
+  const [backupPassphrase, setBackupPassphrase] = useState("");
+  const [backupPassphrase2, setBackupPassphrase2] = useState("");
+  const [exportPlain, setExportPlain] = useState(false);
 
-  const handleExportData = async () => {
-    try {
-      const json = await exportData();
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `pt-progress-notes-backup-${new Date().toISOString().split("T")[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      alert("데이터 내보내기에 실패했습니다.");
-    }
+  const MIN_BACKUP_PASSPHRASE = 8;
+
+  /* 암호화 백업 가져오기 — 파일 선택 후 백업 암호 입력 모달 */
+  const [pendingImportText, setPendingImportText] = useState<string | null>(null);
+  const [importPassphrase, setImportPassphrase] = useState("");
+  const [importPwError, setImportPwError] = useState("");
+
+  const downloadTextFile = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleExportConfirm = async () => {
     if (!therapist || !therapist.id) {
       setExportPwError("로그인 정보를 확인할 수 없습니다.");
       return;
+    }
+    if (!exportPlain) {
+      if (backupPassphrase.length < MIN_BACKUP_PASSPHRASE) {
+        setExportPwError(`백업 암호는 ${MIN_BACKUP_PASSPHRASE}자 이상이어야 합니다.`);
+        return;
+      }
+      if (backupPassphrase !== backupPassphrase2) {
+        setExportPwError("백업 암호가 서로 일치하지 않습니다.");
+        return;
+      }
     }
     setExportPwError("");
     try {
@@ -96,12 +120,30 @@ export default function Sidebar() {
         setExportPwError("비밀번호가 일치하지 않습니다.");
         return;
       }
+
+      const dateStr = new Date().toISOString().split("T")[0];
+      if (exportPlain) {
+        downloadTextFile(await exportData(), `pt-progress-notes-backup-${dateStr}.json`);
+      } else {
+        downloadTextFile(
+          await exportDataEncrypted(backupPassphrase),
+          `pt-progress-notes-backup-${dateStr}.encrypted.json`
+        );
+      }
       setShowExportPwConfirm(false);
       setExportPw("");
-      await handleExportData();
+      setBackupPassphrase("");
+      setBackupPassphrase2("");
+      setExportPlain(false);
     } catch (err) {
-      setExportPwError((err as Error)?.message ?? "확인 중 오류가 발생했습니다.");
+      setExportPwError((err as Error)?.message ?? "내보내기 중 오류가 발생했습니다.");
     }
+  };
+
+  const showImportResult = (result: { notesCount: number; therapistsCount: number; skippedCount: number }) => {
+    const therapistMsg = result.therapistsCount > 0 ? `, 치료사 ${result.therapistsCount}명` : "";
+    const skippedMsg = result.skippedCount > 0 ? `\n(형식 오류로 노트 ${result.skippedCount}건은 제외됨)` : "";
+    alert(`가져오기 완료: 노트 ${result.notesCount}건${therapistMsg} 추가됨${skippedMsg}`);
   };
 
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,16 +151,38 @@ export default function Sidebar() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (ev) => {
+      const text = ev.target?.result as string;
+      // 암호화 백업이면 암호 입력 모달로 넘긴다
+      if (isEncryptedBackup(text)) {
+        setPendingImportText(text);
+        setImportPassphrase("");
+        setImportPwError("");
+        return;
+      }
       try {
-        const result = await importData(ev.target?.result as string);
-        const therapistMsg = result.therapistsCount > 0 ? `, 치료사 ${result.therapistsCount}명` : "";
-        alert(`가져오기 완료: 노트 ${result.notesCount}건${therapistMsg} 추가됨`);
+        showImportResult(await importData(text));
       } catch {
         alert("데이터 가져오기 실패: 올바른 JSON 파일인지 확인해주세요.");
       }
     };
+    reader.onerror = () => {
+      alert("파일을 읽지 못했습니다. 파일 상태를 확인한 뒤 다시 시도해주세요.");
+    };
     reader.readAsText(file);
     e.target.value = "";
+  };
+
+  const handleEncryptedImportConfirm = async () => {
+    if (!pendingImportText) return;
+    setImportPwError("");
+    try {
+      const result = await importData(pendingImportText, importPassphrase);
+      setPendingImportText(null);
+      setImportPassphrase("");
+      showImportResult(result);
+    } catch (err) {
+      setImportPwError((err as Error)?.message ?? "가져오기에 실패했습니다.");
+    }
   };
 
   const handleLogout = async () => {
@@ -240,9 +304,12 @@ export default function Sidebar() {
                   <>
                     <button onClick={() => { setShowMacroModal(true); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"><Sparkles size={18} /> 매크로 관리 (/도수1~20)</button>
                     <hr className="my-1 border-gray-100 dark:border-slate-700" />
-                    <button onClick={() => { setShowExportPwConfirm(true); setExportPw(""); setExportPwError(""); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"><Download size={18} /> 데이터 내보내기</button>
+                    <button onClick={() => { setShowExportPwConfirm(true); setExportPw(""); setExportPwError(""); setBackupPassphrase(""); setBackupPassphrase2(""); setExportPlain(false); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"><Download size={18} /> 데이터 내보내기</button>
                     <button onClick={() => { fileInputRef.current?.click(); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-orange-900/30 hover:text-orange-700 dark:hover:text-orange-300 transition-colors"><Upload size={18} /> 데이터 가져오기</button>
                   </>
+                )}
+                {isMaster && (
+                  <button onClick={() => { setShowBackupRestore(true); setShowDropdown(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"><History size={18} /> 자동 백업 복원</button>
                 )}
               </div>
             </>
@@ -341,9 +408,19 @@ export default function Sidebar() {
               <li key={note.id} onClick={() => { if (isDeleteMode) setSelectedIds(prev => prev.includes(note.id) ? prev.filter(i => i !== note.id) : [...prev, note.id]); else selectNote(note.id); }}
                 className={`group p-4 rounded-2xl cursor-pointer transition-all border-2 flex items-center gap-3 ${selectedNoteId === note.id && !isDeleteMode ? "bg-blue-50/50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800" : "bg-white dark:bg-slate-800 border-transparent shadow-sm"} ${isDeleteMode && selectedIds.includes(note.id) ? "!border-red-200 dark:!border-red-800 !bg-red-50 dark:!bg-red-900/30" : ""}`}>
                 {isDeleteMode && <input type="checkbox" checked={selectedIds.includes(note.id)} readOnly className="w-5 h-5 rounded border-gray-300 dark:border-slate-600 text-red-600" aria-label={`${note.patientName} 기록 선택`} />}
-                <span className={`font-bold text-[15px] truncate block w-full text-left ${selectedNoteId === note.id && !isDeleteMode ? "text-blue-800 dark:text-blue-200" : isDeleteMode && selectedIds.includes(note.id) ? "text-red-800 dark:text-red-200" : "text-gray-900 dark:text-gray-100"}`}>
+                <span className={`font-bold text-[15px] truncate block flex-1 text-left ${selectedNoteId === note.id && !isDeleteMode ? "text-blue-800 dark:text-blue-200" : isDeleteMode && selectedIds.includes(note.id) ? "text-red-800 dark:text-red-200" : "text-gray-900 dark:text-gray-100"}`}>
                   {note.patientName || "(이름 없음)"} - {formatDate(note.savedAt)}
                 </span>
+                {!isDeleteMode && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setTrendChartData({ patientId: note.patientId, patientName: note.patientName, chartNo: note.chartNo }); }}
+                    className="shrink-0 p-1.5 rounded-lg text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                    aria-label={`${note.patientName} 추이 보기`}
+                    title="이 환자의 치료 추이 그래프 보기"
+                  >
+                    <TrendingUp size={15} />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -388,6 +465,15 @@ export default function Sidebar() {
       {showTherapistModal && <TherapistManagementModal onClose={() => setShowTherapistModal(false)} />}
       {showMacroModal && <MacroManagementModal onClose={() => setShowMacroModal(false)} />}
       {showChangePwModal && <ChangePasswordModal onClose={() => setShowChangePwModal(false)} />}
+      {showBackupRestore && <BackupRestoreModal onClose={() => setShowBackupRestore(false)} />}
+      {trendChartData && (
+        <PatientTrendChart
+          patientId={trendChartData.patientId}
+          patientName={trendChartData.patientName}
+          chartNo={trendChartData.chartNo}
+          onClose={() => setTrendChartData(null)}
+        />
+      )}
       <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportData} className="hidden" />
 
       {/* ── 삭제 확인 모달 (1단계) ── */}
@@ -422,20 +508,59 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* ── 내보내기 전 비밀번호 재확인 ── */}
+      {/* ── 데이터 내보내기 (본인 확인 + 백업 암호 설정) ── */}
       {showExportPwConfirm && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">본인 확인 비밀번호</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-2 font-medium text-sm text-center">환자 정보 전체가 포함된 백업 파일을<br />내보내려면 비밀번호를 다시 입력해주세요.</p>
-            <p className="text-amber-600 dark:text-amber-400 mb-6 font-bold text-xs text-center">⚠️ 백업 파일의 환자정보는 암호화되지 않습니다.<br />안전한 위치에만 보관하세요.</p>
-            <label htmlFor="confirm-export-pw" className="sr-only">비밀번호 입력</label>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">데이터 내보내기</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4 font-medium text-sm text-center">환자 정보 전체가 포함된 백업 파일입니다.<br />본인 비밀번호를 다시 입력해주세요.</p>
+
+            <label htmlFor="confirm-export-pw" className="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">내 비밀번호 (본인 확인)</label>
             <input id="confirm-export-pw" type="password" value={exportPw} onChange={(e) => { setExportPw(e.target.value); setExportPwError(""); }} placeholder="비밀번호 입력"
-              className="w-full p-4 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 text-center font-bold tracking-widest outline-none mb-3" autoFocus />
+              className="w-full p-3.5 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 font-bold tracking-widest outline-none mb-4" autoFocus />
+
+            {!exportPlain && (
+              <>
+                <label htmlFor="backup-passphrase" className="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">백업 파일 암호 (복원 시 필요 — {MIN_BACKUP_PASSPHRASE}자 이상)</label>
+                <input id="backup-passphrase" type="password" value={backupPassphrase} onChange={(e) => { setBackupPassphrase(e.target.value); setExportPwError(""); }} placeholder="백업 파일을 잠글 암호"
+                  className="w-full p-3.5 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10 font-bold tracking-widest outline-none mb-2" />
+                <label htmlFor="backup-passphrase2" className="sr-only">백업 파일 암호 확인</label>
+                <input id="backup-passphrase2" type="password" value={backupPassphrase2} onChange={(e) => { setBackupPassphrase2(e.target.value); setExportPwError(""); }} placeholder="백업 암호 다시 입력"
+                  className="w-full p-3.5 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10 font-bold tracking-widest outline-none mb-2" />
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-3 leading-snug">⚠️ 이 암호를 잊으면 백업 파일을 복원할 수 없습니다. 안전한 곳에 따로 기록해두세요.</p>
+              </>
+            )}
+
+            <label className="flex items-start gap-2 mb-4 cursor-pointer select-none">
+              <input type="checkbox" checked={exportPlain} onChange={(e) => { setExportPlain(e.target.checked); setExportPwError(""); }} className="mt-0.5 w-4 h-4 rounded border-gray-300 dark:border-slate-600" />
+              <span className="text-xs font-bold text-gray-600 dark:text-gray-300">암호화 없이 내보내기 (권장하지 않음)</span>
+            </label>
+            {exportPlain && (
+              <p className="text-amber-600 dark:text-amber-400 mb-4 font-bold text-xs text-center bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">⚠️ 환자정보가 평문 JSON 으로 저장됩니다.<br />파일이 유출되면 누구나 열람할 수 있습니다.</p>
+            )}
+
             {exportPwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{exportPwError}</p>}
             <div className="flex gap-3">
-              <button onClick={() => { setShowExportPwConfirm(false); setExportPw(""); }} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
+              <button onClick={() => { setShowExportPwConfirm(false); setExportPw(""); setBackupPassphrase(""); setBackupPassphrase2(""); setExportPlain(false); }} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
               <button onClick={handleExportConfirm} className="flex-1 py-3.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-lg transition-colors">내보내기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 암호화 백업 가져오기 — 백업 암호 입력 ── */}
+      {pendingImportText && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">암호화된 백업 파일</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-6 font-medium text-sm text-center">이 백업은 암호로 보호되어 있습니다.<br />내보낼 때 설정한 백업 암호를 입력해주세요.</p>
+            <label htmlFor="import-passphrase" className="sr-only">백업 암호 입력</label>
+            <input id="import-passphrase" type="password" value={importPassphrase} onChange={(e) => { setImportPassphrase(e.target.value); setImportPwError(""); }} placeholder="백업 암호 입력"
+              className="w-full p-4 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 text-center font-bold tracking-widest outline-none mb-3" autoFocus />
+            {importPwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{importPwError}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => { setPendingImportText(null); setImportPassphrase(""); }} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
+              <button onClick={handleEncryptedImportConfirm} className="flex-1 py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl shadow-lg transition-colors">가져오기</button>
             </div>
           </div>
         </div>

@@ -16,10 +16,16 @@
  * (이전 클라우드 코드는 git history `14316af` 이전 커밋에서 참조 가능)
  */
 
-import type { NoteData, TherapistRecord, Therapist } from "@/types";
+import { NoteDataSchema, type NoteData, type TherapistRecord, type Therapist } from "@/types";
 import { hashPassword, verifyPassword, isLegacyHash } from "@/components/hashUtils";
-import { encryptData, decryptData } from "@/lib/cryptoService";
-import { snapshotBeforeDestructive } from "@/lib/autoBackup";
+import {
+  encryptData,
+  decryptData,
+  encryptWithPassphrase,
+  decryptWithPassphrase,
+  type PassphraseEncrypted,
+} from "@/lib/cryptoService";
+import { snapshotBeforeDestructive, listBackups, type BackupSnapshot } from "@/lib/autoBackup";
 import { genId } from "@/lib/genId";
 import { validateNewPassword } from "@/lib/passwordPolicy";
 
@@ -221,6 +227,60 @@ export async function reauthenticate(
 }
 
 /* ══════════════════════════════════════════
+   환자 식별자 (patientId)
+   ══════════════════════════════════════════
+   동명이인 구분을 위해 노트마다 내부 환자 ID를 부여한다.
+   매칭 규칙: 차트번호 → 이름+생년월일 → (백필 한정) 이름 단독 → 신규 발급 */
+
+function resolvePatientId(
+  note: NoteData,
+  pool: NoteData[],
+  options: { allowNameOnly?: boolean } = {}
+): string {
+  if (note.patientId) return note.patientId;
+
+  const chartNo = note.chartNo?.trim();
+  if (chartNo) {
+    const match = pool.find((n) => n.patientId && n.chartNo?.trim() === chartNo);
+    if (match?.patientId) return match.patientId;
+  }
+
+  const name = note.patientName?.trim();
+  const birth = note.birthDate?.trim();
+  if (name && birth) {
+    const match = pool.find(
+      (n) => n.patientId && n.patientName?.trim() === name && n.birthDate?.trim() === birth
+    );
+    if (match?.patientId) return match.patientId;
+  }
+
+  // 구데이터 백필용: 식별 정보가 이름뿐인 노트도 같은 환자로 묶는다
+  if (options.allowNameOnly && name) {
+    const match = pool.find((n) => n.patientId && n.patientName?.trim() === name);
+    if (match?.patientId) return match.patientId;
+  }
+
+  return `patient-${genId()}`;
+}
+
+/** patientId 가 없는 기존 노트에 백필. 모든 노트에 있으면 no-op (idempotent). */
+async function ensurePatientIds(notes: NoteData[]): Promise<NoteData[]> {
+  if (notes.length === 0 || notes.every((n) => n.patientId)) return notes;
+
+  // 먼저 기록된 노트 기준으로 그룹핑되도록 savedAt 오름차순으로 부여
+  const ordered = [...notes].sort(
+    (a, b) => new Date(a.savedAt || 0).getTime() - new Date(b.savedAt || 0).getTime()
+  );
+  for (const note of ordered) {
+    if (!note.patientId) {
+      note.patientId = resolvePatientId(note, ordered, { allowNameOnly: true });
+    }
+  }
+  await writeNotes(notes);
+  return notes;
+}
+
+/* ══════════════════════════════════════════
    Notes CRUD
    ══════════════════════════════════════════ */
 
@@ -265,20 +325,27 @@ function sanitizePainAreas(note: NoteData): NoteData {
 }
 
 export async function fetchNotes(): Promise<NoteData[]> {
-  return (await readNotes())
+  const notes = await ensurePatientIds(await readNotes());
+  return notes
     .map(sanitizePainAreas)
     .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
 }
 
 export async function upsertNote(note: NoteData): Promise<NoteData> {
   const session = read<Therapist | null>(SESSION_KEY, null);
+  const notes = await ensurePatientIds(await readNotes());
   const enriched: NoteData = {
     ...note,
+    // 같은 id 의 기존 노트가 있으면 그 patientId 를 재사용 — 차트번호·생년월일이
+    // 비어 있는 노트를 재저장할 때마다 새 환자로 갈라지는 churn 방지
+    patientId:
+      note.patientId ||
+      notes.find((n) => n.id === note.id)?.patientId ||
+      resolvePatientId(note, notes),
     therapist: note.therapist ?? session ?? undefined,
     therapistUid: note.therapistUid || session?.uid || "",
   };
 
-  const notes = await readNotes();
   const idx = notes.findIndex((n) => n.id === enriched.id);
   if (idx >= 0) notes[idx] = enriched;
   else notes.unshift(enriched);
@@ -329,7 +396,7 @@ export async function fetchTherapists(): Promise<TherapistRecord[]> {
   return read<TherapistRecord[]>(THERAPISTS_KEY, []);
 }
 
-export async function createTherapistViaEdgeFunction(
+export async function createTherapist(
   loginId: string,
   name: string,
   password: string
@@ -452,17 +519,108 @@ export async function exportAllData(): Promise<string> {
   );
 }
 
-export async function importNotes(notes: NoteData[]): Promise<number> {
-  if (notes.length === 0) return 0;
+/* ── 암호화 백업 (passphrase) ── */
+
+const ENCRYPTED_BACKUP_FORMAT = "ptnote-encrypted-v1";
+
+interface EncryptedBackupEnvelope extends PassphraseEncrypted {
+  app: string;
+  format: typeof ENCRYPTED_BACKUP_FORMAT;
+  exportedAt: string;
+}
+
+/** 내보내기(암호화): 백업 페이로드 전체를 passphrase 파생 키로 AES-GCM 암호화 */
+export async function exportAllDataEncrypted(passphrase: string): Promise<string> {
+  const plain = await exportAllData();
+  const encrypted = await encryptWithPassphrase(plain, passphrase);
+  const envelope: EncryptedBackupEnvelope = {
+    app: "pt-progress-note",
+    format: ENCRYPTED_BACKUP_FORMAT,
+    exportedAt: new Date().toISOString(),
+    ...encrypted,
+  };
+  return JSON.stringify(envelope, null, 2);
+}
+
+/** 파일 내용이 암호화 백업(passphrase 필요)인지 판별 */
+export function isEncryptedBackup(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text);
+    return !!parsed && parsed.format === ENCRYPTED_BACKUP_FORMAT;
+  } catch {
+    return false;
+  }
+}
+
+/** 암호화 백업을 평문 백업 JSON 문자열로 복호화. passphrase 불일치 시 throw. */
+export async function decryptBackupText(text: string, passphrase: string): Promise<string> {
+  const envelope = JSON.parse(text) as EncryptedBackupEnvelope;
+  if (envelope.format !== ENCRYPTED_BACKUP_FORMAT) {
+    throw new Error("암호화 백업 형식이 아닙니다.");
+  }
+  try {
+    return await decryptWithPassphrase(envelope, passphrase);
+  } catch {
+    throw new Error("백업 암호가 올바르지 않습니다.");
+  }
+}
+
+export interface ImportNotesResult {
+  added: number;
+  skippedInvalid: number; // 스키마 검증 실패로 제외된 건수 (조용히 버리지 않고 보고)
+}
+
+export async function importNotes(notes: NoteData[]): Promise<ImportNotesResult> {
+  if (!Array.isArray(notes) || notes.length === 0) return { added: 0, skippedInvalid: 0 };
   const existing = await readNotes();
   await snapshotBeforeDestructive("before-import", existing);
   const existingIds = new Set(existing.map((n) => n.id));
-  const newOnes = notes
-    .filter((n) => !existingIds.has(n.id))
-    .map(sanitizeNote); // Fix #10: 임포트 시 sanitize
-  if (newOnes.length === 0) return 0;
+
+  let skippedInvalid = 0;
+  const newOnes: NoteData[] = [];
+  for (const raw of notes) {
+    if (!raw || typeof raw !== "object") { skippedInvalid++; continue; }
+    // 구버전 painAreas 형식(PainEntry[] 등)을 먼저 정규화한 뒤 스키마 검증
+    const normalized = sanitizeNote(sanitizePainAreas(raw as NoteData));
+    const parsed = NoteDataSchema.safeParse(normalized);
+    if (!parsed.success) { skippedInvalid++; continue; }
+    if (existingIds.has(normalized.id)) continue; // 중복은 오류가 아님 — 조용히 스킵
+    newOnes.push(normalized);
+  }
+
+  if (newOnes.length === 0) return { added: 0, skippedInvalid };
+
+  // patientId 가 없는 노트에는 기존+가져오는 노트 전체를 기준으로 부여
+  const pool = [...existing, ...newOnes];
+  for (const n of newOnes) {
+    if (!n.patientId) {
+      n.patientId = resolvePatientId(n, pool, { allowNameOnly: true });
+    }
+  }
+
   await writeNotes([...newOnes, ...existing]);
-  return newOnes.length;
+  return { added: newOnes.length, skippedInvalid };
+}
+
+/* ── 자동 백업 복원 ── */
+
+export async function listAutoBackups(): Promise<BackupSnapshot[]> {
+  return listBackups();
+}
+
+/**
+ * 자동 백업 스냅샷으로 전체 복원 (현재 노트를 스냅샷 내용으로 교체).
+ * 복원 직전 현재 상태를 추가 스냅샷으로 남겨 복원 자체도 되돌릴 수 있게 한다.
+ */
+export async function restoreAutoBackup(at: string): Promise<number> {
+  const snapshots = await listBackups();
+  const target = snapshots.find((s) => s.at === at);
+  if (!target) throw new Error("해당 백업을 찾을 수 없습니다.");
+
+  const current = await readNotes();
+  await snapshotBeforeDestructive("before-restore", current);
+  await writeNotes(target.notes);
+  return target.notes.length;
 }
 
 /**

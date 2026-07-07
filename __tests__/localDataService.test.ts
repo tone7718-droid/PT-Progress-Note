@@ -86,7 +86,7 @@ describe("localDataService — change own password", () => {
 
   it("regular therapist can change their own password", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapistViaEdgeFunction("PT-001", "김치료", "1234");
+    await ds.createTherapist("PT-001", "김치료", "1234");
     await ds.signIn("PT-001", "1234"); // 일반 치료사로 로그인 (세션 전환)
 
     await ds.updateTherapistPasswordViaAuth("Pt-secret9");
@@ -236,7 +236,7 @@ describe("localDataService — therapist import", () => {
 
   it("skips master records and active login-id collisions", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapistViaEdgeFunction("PT-001", "기존", "1234");
+    await ds.createTherapist("PT-001", "기존", "1234");
 
     const imported = await ds.importTherapists([
       record("m2", "master2", { role: "master" as const }), // 마스터 → 스킵
@@ -286,7 +286,7 @@ describe("localDataService — import sanitize (임상 문구 보존)", () => {
 describe("localDataService — export security (v3)", () => {
   it("export excludes password hashes and marks version 3", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapistViaEdgeFunction("PT-001", "김치료", "Secret1!");
+    await ds.createTherapist("PT-001", "김치료", "Secret1!");
     await ds.upsertNote(sampleNote({ id: "n1", patientName: "김환자" }));
 
     const parsed = JSON.parse(await ds.exportAllData());
@@ -302,7 +302,7 @@ describe("localDataService — export security (v3)", () => {
 
   it("therapists restored from v3 backup are login-locked until master resets", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapistViaEdgeFunction("PT-001", "김치료", "Secret1!");
+    await ds.createTherapist("PT-001", "김치료", "Secret1!");
     const backup = JSON.parse(await ds.exportAllData());
 
     // 새 기기 시뮬레이션
@@ -323,7 +323,7 @@ describe("localDataService — export security (v3)", () => {
 
   it("legacy v2 backups with hashes still restore working credentials", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapistViaEdgeFunction("PT-001", "김치료", "Secret1!");
+    await ds.createTherapist("PT-001", "김치료", "Secret1!");
     const withHash = (await ds.fetchTherapists()).find((t) => t.id === "PT-001")!;
 
     window.localStorage.clear();
@@ -339,7 +339,7 @@ describe("localDataService — export security (v3)", () => {
 describe("localDataService — master password reset", () => {
   it("rejects reset when session is not master", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapistViaEdgeFunction("PT-001", "김치료", "Secret1!");
+    await ds.createTherapist("PT-001", "김치료", "Secret1!");
     const target = (await ds.fetchTherapists()).find((t) => t.id === "PT-001")!;
 
     await ds.signIn("PT-001", "Secret1!"); // 일반 치료사 세션으로 전환
@@ -350,7 +350,7 @@ describe("localDataService — master password reset", () => {
 
   it("enforces the password policy on reset", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapistViaEdgeFunction("PT-001", "김치료", "Secret1!");
+    await ds.createTherapist("PT-001", "김치료", "Secret1!");
     const target = (await ds.fetchTherapists()).find((t) => t.id === "PT-001")!;
 
     await expect(ds.resetTherapistPasswordDb(target.uid, "0000")).rejects.toThrow(/기본 비밀번호/);
@@ -361,23 +361,125 @@ describe("localDataService — master password reset", () => {
 describe("localDataService — registration password policy", () => {
   it("rejects weak or default passwords at the data layer (UI 우회 방어)", async () => {
     await ds.signIn("master", "0000");
-    await expect(ds.createTherapistViaEdgeFunction("PT-001", "김치료", "0000")).rejects.toThrow(
+    await expect(ds.createTherapist("PT-001", "김치료", "0000")).rejects.toThrow(
       /기본 비밀번호/
     );
-    await expect(ds.createTherapistViaEdgeFunction("PT-001", "김치료", "abc")).rejects.toThrow(
+    await expect(ds.createTherapist("PT-001", "김치료", "abc")).rejects.toThrow(
       /4~20자/
     );
     await expect(
-      ds.createTherapistViaEdgeFunction("PT-001", "김치료", "한글비밀번호")
+      ds.createTherapist("PT-001", "김치료", "한글비밀번호")
     ).rejects.toThrow(/영문·숫자·특수문자/);
   });
 
   it("accepts alphanumeric/special passwords (숫자 전용 강제 아님)", async () => {
     await ds.signIn("master", "0000");
-    const rec = await ds.createTherapistViaEdgeFunction("PT-001", "김치료", "Pw-2026!");
+    const rec = await ds.createTherapist("PT-001", "김치료", "Pw-2026!");
     expect(rec.id).toBe("PT-001");
     const login = await ds.signIn("PT-001", "Pw-2026!");
     expect(login.therapist.id).toBe("PT-001");
+  });
+});
+
+describe("localDataService — encrypted backup (passphrase)", () => {
+  it("round-trips notes through an encrypted backup", async () => {
+    await ds.signIn("master", "0000");
+    await ds.upsertNote(sampleNote({ id: "n1", patientName: "김환자" }));
+
+    const encText = await ds.exportAllDataEncrypted("backup-pass-123");
+    expect(ds.isEncryptedBackup(encText)).toBe(true);
+    expect(encText).not.toContain("김환자"); // 환자정보 평문 미노출
+
+    const plain = await ds.decryptBackupText(encText, "backup-pass-123");
+    const payload = JSON.parse(plain);
+    expect(payload.version).toBe(3);
+    expect(payload.notes[0].patientName).toBe("김환자");
+    for (const t of payload.therapists) expect(t.passwordHash).toBe("");
+  });
+
+  it("rejects a wrong passphrase", async () => {
+    await ds.signIn("master", "0000");
+    await ds.upsertNote(sampleNote({ id: "n1" }));
+    const encText = await ds.exportAllDataEncrypted("correct-pass-1");
+    await expect(ds.decryptBackupText(encText, "wrong-pass-99")).rejects.toThrow(/백업 암호/);
+  });
+
+  it("plain backups are not detected as encrypted", async () => {
+    await ds.signIn("master", "0000");
+    expect(ds.isEncryptedBackup(await ds.exportAllData())).toBe(false);
+    expect(ds.isEncryptedBackup("not-json")).toBe(false);
+  });
+});
+
+describe("localDataService — patientId", () => {
+  it("assigns a patientId on save and groups by chart number", async () => {
+    const a = await ds.upsertNote(sampleNote({ id: "a", chartNo: "C-100", patientName: "김철수" }));
+    const b = await ds.upsertNote(sampleNote({ id: "b", chartNo: "C-100", patientName: "김철수" }));
+    expect(a.patientId).toBeTruthy();
+    expect(b.patientId).toBe(a.patientId);
+  });
+
+  it("distinguishes same-name patients by birth date (동명이인)", async () => {
+    const a = await ds.upsertNote(
+      sampleNote({ id: "a", chartNo: "", patientName: "김철수", birthDate: "1980-01-01" })
+    );
+    const b = await ds.upsertNote(
+      sampleNote({ id: "b", chartNo: "", patientName: "김철수", birthDate: "1999-12-31" })
+    );
+    expect(b.patientId).not.toBe(a.patientId);
+  });
+
+  it("keeps the same patientId when re-saving a note without identifiers (no churn)", async () => {
+    const first = await ds.upsertNote(
+      sampleNote({ id: "x", chartNo: "", birthDate: "", patientName: "" })
+    );
+    // 폼이 patientId 를 돌려받지 못한 상황 시뮬레이션 — patientId 없이 같은 id 재저장
+    const again = await ds.upsertNote(
+      sampleNote({ id: "x", chartNo: "", birthDate: "", patientName: "" })
+    );
+    expect(first.patientId).toBeTruthy();
+    expect(again.patientId).toBe(first.patientId);
+  });
+
+  it("backfills patientId for legacy notes on fetch", async () => {
+    const legacy = [
+      sampleNote({ id: "l1", patientName: "이영희" }),
+      sampleNote({ id: "l2", patientName: "이영희" }),
+    ];
+    window.localStorage.setItem("pt_local_notes", JSON.stringify(legacy)); // 구버전 평문 주입
+    const all = await ds.fetchNotes();
+    expect(all.every((n) => !!n.patientId)).toBe(true);
+    expect(all[0].patientId).toBe(all[1].patientId);
+  });
+});
+
+describe("localDataService — import validation & auto-backup restore", () => {
+  it("skips malformed notes and reports the count (조용히 버리지 않음)", async () => {
+    const good = sampleNote({ id: "ok-1" });
+    const bad = { id: "bad-1", patientName: 123 } as unknown as NoteData; // rom/savedAt 등 구조 불일치
+    const result = await ds.importNotes([good, bad]);
+    expect(result.added).toBe(1);
+    expect(result.skippedInvalid).toBe(1);
+    expect((await ds.fetchNotes()).map((n) => n.id)).toEqual(["ok-1"]);
+  });
+
+  it("restores notes from an auto-backup snapshot", async () => {
+    await ds.upsertNote(sampleNote({ id: "keep-1", patientName: "복원대상" }));
+    await ds.deleteNotes(["keep-1"]); // before-delete 스냅샷 생성
+    expect(await ds.fetchNotes()).toHaveLength(0);
+
+    const backups = await ds.listAutoBackups();
+    expect(backups.length).toBeGreaterThan(0);
+    const last = backups[backups.length - 1];
+    expect(last.reason).toBe("before-delete");
+
+    const count = await ds.restoreAutoBackup(last.at);
+    expect(count).toBe(1);
+    expect((await ds.fetchNotes()).map((n) => n.id)).toEqual(["keep-1"]);
+  });
+
+  it("throws for an unknown snapshot timestamp", async () => {
+    await expect(ds.restoreAutoBackup("2000-01-01T00:00:00Z")).rejects.toThrow(/찾을 수 없습니다/);
   });
 });
 

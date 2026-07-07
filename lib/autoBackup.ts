@@ -3,8 +3,8 @@
  * localStorage 링버퍼에 스냅샷으로 남긴다. 사용자에게는 노출하지 않음.
  *
  * 사용자 보호: "방금 삭제했는데 잘못 눌렀다" 같은 사고 시 복원 단서를 남기는 게 목적.
- * UI 메뉴는 의도적으로 두지 않음 (이전 버전에서 제거됨). 복원이 필요하면 콘솔에서
- * `await listBackups()` 로 꺼내 쓰는 식 (노트 본문과 동일하게 AES-GCM 암호화 저장).
+ * 복원은 사이드바 메뉴(자동 백업 복원, master 전용)에서 가능하며, 콘솔에서
+ * `await listBackups()` 로도 접근 가능 (노트 본문과 동일하게 AES-GCM 암호화 저장).
  *
  * 저장 키: localStorage["pt_auto_backup_v1"]
  * 형식:    encryptData(JSON.stringify({ snapshots: BackupSnapshot[] })) — 최신이 배열 끝.
@@ -17,7 +17,7 @@ import { encryptData, decryptData } from "@/lib/cryptoService";
 const KEY = "pt_auto_backup_v1";
 const MAX_SNAPSHOTS = 5;
 
-export type BackupReason = "before-delete" | "before-import";
+export type BackupReason = "before-delete" | "before-import" | "before-restore";
 
 export interface BackupSnapshot {
   at: string;          // ISO timestamp
@@ -82,7 +82,7 @@ export async function snapshotBeforeDestructive(reason: BackupReason, notes: Not
   await writeStore({ snapshots: next });
 }
 
-/** 콘솔 디버깅 / 향후 복원 UI 추가 시 사용. */
+/** 복원 UI(BackupRestoreModal) / 콘솔 디버깅용. 최신이 배열 끝. */
 export async function listBackups(): Promise<BackupSnapshot[]> {
   return (await readStore()).snapshots;
 }

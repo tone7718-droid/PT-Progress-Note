@@ -21,3 +21,6 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm test
+      # 정적 export 빌드까지 검증 — 타입/린트는 통과해도 export 단계에서
+      # 깨지는 회귀(정적 생성 오류 등)를 CI 에서 잡기 위함
+      - run: npm run build

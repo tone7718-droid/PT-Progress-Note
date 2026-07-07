@@ -4,6 +4,7 @@ import Sidebar from "@/components/Sidebar";
 import ProgressNoteForm from "@/components/ProgressNoteForm";
 import LoginModal from "@/components/LoginModal";
 import UpdateChecker from "@/components/UpdateChecker";
+import AutoLock from "@/components/AutoLock";
 import { useEffect, useState } from "react";
 import { Menu, X, Moon, Sun } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -143,6 +144,9 @@ function HomeContent() {
 
       {/* Tauri 데스크톱 앱 전용 — 자동 업데이트 체커 (웹에서는 렌더 안 됨) */}
       <UpdateChecker />
+
+      {/* 30분 미사용 시 자동 로그아웃 (공용 PC 방치 대비) */}
+      <AutoLock />
     </div>
   );
 }
