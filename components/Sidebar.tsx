@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNoteStore } from "@/store/useNoteStore";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Menu, Search, Plus, Trash2, UserPlus, LogIn, ChevronDown, ChevronRight, ArrowRightLeft, Shield, Download, Upload, Sparkles } from "lucide-react";
+import { Menu, Search, Plus, Trash2, UserPlus, LogIn, ChevronDown, ChevronRight, ArrowRightLeft, Shield, Download, Upload, Sparkles, KeyRound, AlertTriangle } from "lucide-react";
 import LoginModal from "./LoginModal";
 import TherapistManagementModal from "./TherapistManagementModal";
 import MacroManagementModal from "./MacroManagementModal";
+import ChangePasswordModal from "./ChangePasswordModal";
+import { verifyPassword } from "./hashUtils";
+import { DEFAULT_PASSWORD } from "@/lib/passwordPolicy";
 
 export default function Sidebar() {
   const notes = useNoteStore((s) => s.notes);
@@ -37,6 +40,8 @@ export default function Sidebar() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showTherapistModal, setShowTherapistModal] = useState(false);
   const [showMacroModal, setShowMacroModal] = useState(false);
+  const [showChangePwModal, setShowChangePwModal] = useState(false);
+  const [usingDefaultPw, setUsingDefaultPw] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -95,6 +100,23 @@ export default function Sidebar() {
   };
 
   const isMaster = therapist?.role === "master";
+
+  /* 로그인한 치료사가 아직 기본 비밀번호(0000)를 쓰고 있는지 검사.
+     therapists(해시 포함)가 갱신될 때마다 재평가 → 변경 완료 시 배너 자동 사라짐.
+     setState 는 async 콜백 안에서만 호출 (effect 동기 setState 금지 규칙 준수). */
+  useEffect(() => {
+    let cancelled = false;
+    const rec = therapist ? therapists.find((t) => t.uid === therapist.uid) : undefined;
+    const check = rec
+      ? verifyPassword(DEFAULT_PASSWORD, rec.passwordHash)
+      : Promise.resolve(false);
+    void check.then((isDefault) => {
+      if (!cancelled) setUsingDefaultPw(isDefault);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [therapist, therapists]);
 
   /* 현재 로그인된 치료사의 노트만 표시 (master는 전체, 단 퇴사자 노트는 폴더에서만) */
   const visibleNotes = notes.filter((n) => {
@@ -193,14 +215,38 @@ export default function Sidebar() {
       </div>
 
       {therapist && (
-        <div className="px-4 pt-4 shrink-0">
+        <div className="px-4 pt-4 shrink-0 space-y-2">
           <div className="flex items-center justify-between gap-2 text-[15px] font-bold text-gray-800 dark:text-gray-100 bg-blue-50 dark:bg-blue-900/30 px-4 py-3 rounded-2xl border border-blue-100 dark:border-blue-800 shadow-sm w-full">
-            <div className="flex items-center gap-3">
-              <div className={`${isMaster ? "bg-amber-500" : "bg-blue-600"} text-white p-1.5 rounded-full`}><Shield size={16} /></div>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`${isMaster ? "bg-amber-500" : "bg-blue-600"} text-white p-1.5 rounded-full shrink-0`}><Shield size={16} /></div>
               <span className="truncate">{therapist.name} {therapist.id && <span className="text-gray-400 dark:text-gray-500 font-mono text-xs">({therapist.id})</span>}</span>
             </div>
-            <button onClick={handleLogout} className="text-xs text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-bold bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-red-100 dark:border-red-900 shadow-sm transition-colors">로그아웃</button>
+            <button onClick={handleLogout} className="shrink-0 text-xs text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-bold bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-red-100 dark:border-red-900 shadow-sm transition-colors">로그아웃</button>
           </div>
+
+          {/* 상시 노출 — 비밀번호 변경 (모달/메뉴에 숨기지 않음, 반복 사용 가능) */}
+          <button
+            onClick={() => setShowChangePwModal(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-200 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm transition-colors"
+          >
+            <KeyRound size={16} /> 비밀번호 변경
+          </button>
+
+          {/* 기본 비밀번호(0000) 사용 중 — 권장 경고 (차단 아님) */}
+          {usingDefaultPw && (
+            <div className="flex items-start gap-2.5 px-3 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+              <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-amber-800 dark:text-amber-200">기본 비밀번호 사용 중 — 변경하세요</p>
+                <button
+                  onClick={() => setShowChangePwModal(true)}
+                  className="mt-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  지금 변경
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -301,6 +347,7 @@ export default function Sidebar() {
       {showLoginModal && <LoginModal onClose={() => setShowLoginModal(false)} />}
       {showTherapistModal && <TherapistManagementModal onClose={() => setShowTherapistModal(false)} />}
       {showMacroModal && <MacroManagementModal onClose={() => setShowMacroModal(false)} />}
+      {showChangePwModal && <ChangePasswordModal onClose={() => setShowChangePwModal(false)} />}
       <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportData} className="hidden" />
 
       {/* ── 삭제 확인 모달 (1단계) ── */}

@@ -81,5 +81,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   updateTherapistPassword: async (newPassword) => {
     await ds.updateTherapistPasswordViaAuth(newPassword);
+    // 변경된 해시를 스토어에도 반영 — 기본 비밀번호 경고 배너가 즉시 갱신되도록
+    const fetched = await ds.fetchTherapists();
+    set({ therapists: fetched });
   },
 }));

@@ -57,6 +57,46 @@ describe("localDataService — auth", () => {
   });
 });
 
+describe("localDataService — change own password", () => {
+  it("changes password and allows re-login with the new one (old one fails)", async () => {
+    await ds.signIn("master", "0000"); // 세션 확보
+    await ds.updateTherapistPasswordViaAuth("Newpass1!");
+
+    // 새 비밀번호로 재로그인 성공, 기존 0000 은 실패
+    const relogin = await ds.signIn("master", "Newpass1!");
+    expect(relogin.therapist.id).toBe("master");
+    await expect(ds.signIn("master", "0000")).rejects.toThrow(/ID 또는 비밀번호/);
+  });
+
+  it("can be changed repeatedly (no first-change lock)", async () => {
+    await ds.signIn("master", "0000");
+    await ds.updateTherapistPasswordViaAuth("first-1");
+    await ds.updateTherapistPasswordViaAuth("second-2");
+    await ds.updateTherapistPasswordViaAuth("third-33");
+
+    expect(await ds.reauthenticate("master", "third-33")).toBe(true);
+    expect(await ds.reauthenticate("master", "first-1")).toBe(false);
+    expect(await ds.reauthenticate("master", "second-2")).toBe(false);
+  });
+
+  it("rejects changing to the default password 0000", async () => {
+    await ds.signIn("master", "0000");
+    await expect(ds.updateTherapistPasswordViaAuth("0000")).rejects.toThrow(/기본 비밀번호/);
+  });
+
+  it("regular therapist can change their own password", async () => {
+    await ds.signIn("master", "0000");
+    await ds.createTherapistViaEdgeFunction("PT-001", "김치료", "1234");
+    await ds.signIn("PT-001", "1234"); // 일반 치료사로 로그인 (세션 전환)
+
+    await ds.updateTherapistPasswordViaAuth("Pt-secret9");
+    expect(await ds.reauthenticate("PT-001", "Pt-secret9")).toBe(true);
+    expect(await ds.reauthenticate("PT-001", "1234")).toBe(false);
+    // 마스터 계정은 영향 없음
+    expect(await ds.reauthenticate("master", "0000")).toBe(true);
+  });
+});
+
 describe("localDataService — notes CRUD", () => {
   it("upsertNote inserts new note and fetchNotes returns it", async () => {
     const note = sampleNote({ patientName: "김환자", id: "n1" });

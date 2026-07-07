@@ -21,6 +21,7 @@ import { hashPassword, verifyPassword, isLegacyHash } from "@/components/hashUti
 import { encryptData, decryptData } from "@/lib/cryptoService";
 import { snapshotBeforeDestructive } from "@/lib/autoBackup";
 import { genId } from "@/lib/genId";
+import { validateNewPassword } from "@/lib/passwordPolicy";
 
 /* ── Storage Keys ── */
 const NOTES_KEY = "pt_local_notes";
@@ -381,6 +382,10 @@ export async function updateTherapistPasswordViaAuth(
 ): Promise<void> {
   const session = read<Therapist | null>(SESSION_KEY, null);
   if (!session) throw new Error("로그인 세션이 없습니다.");
+
+  // 정책 방어 검증 (UI 우회 대비 단일 소스) — 솔트 PBKDF2 로 저장
+  const policyError = validateNewPassword(newPassword);
+  if (policyError) throw new Error(policyError);
 
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
   const passwordHash = await hashPassword(newPassword);
