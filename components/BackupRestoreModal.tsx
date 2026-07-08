@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useNoteStore } from "@/store/useNoteStore";
 import type { BackupSnapshot, BackupReason } from "@/lib/autoBackup";
-import { X, History, AlertCircle, RotateCcw } from "lucide-react";
+import { X, History, RotateCcw } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface BackupRestoreModalProps {
   onClose: () => void;
@@ -107,25 +108,21 @@ export default function BackupRestoreModal({ onClose }: BackupRestoreModalProps)
 
       {/* 복원 확인 */}
       {confirming && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-14 h-14 rounded-full bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center mb-6 mx-auto">
-              <AlertCircle size={32} className="text-amber-500" />
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">백업으로 복원</h3>
-            <p className="text-center text-gray-500 dark:text-gray-400 mb-6 leading-relaxed text-sm">
-              <span className="font-bold text-gray-800 dark:text-gray-200">{formatDateTime(confirming.at)}</span> 시점
-              (노트 {confirming.noteCount}건)으로<br />전체 노트를 교체하시겠습니까?
-            </p>
-            {error && <p className="text-red-500 dark:text-red-400 text-xs font-bold text-center mb-3">{error}</p>}
-            <div className="flex gap-3">
-              <button onClick={() => setConfirming(null)} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
-              <button onClick={handleRestore} disabled={restoring} className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold rounded-xl shadow-lg transition-colors">
-                {restoring ? "복원 중..." : "복원"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          tone="warning"
+          title="백업으로 복원"
+          error={error}
+          confirmLabel="복원"
+          busy={restoring}
+          busyLabel="복원 중..."
+          onCancel={() => setConfirming(null)}
+          onConfirm={handleRestore}
+        >
+          <span className="text-sm">
+            <span className="font-bold text-gray-800 dark:text-gray-200">{formatDateTime(confirming.at)}</span> 시점
+            (노트 {confirming.noteCount}건)으로<br />전체 노트를 교체하시겠습니까?
+          </span>
+        </ConfirmDialog>
       )}
     </div>
   );

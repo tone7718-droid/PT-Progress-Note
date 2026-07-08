@@ -13,6 +13,9 @@ import BackupRestoreModal from "./BackupRestoreModal";
 import { verifyPassword } from "./hashUtils";
 import { DEFAULT_PASSWORD } from "@/lib/passwordPolicy";
 import { isEncryptedBackup } from "@/lib/localDataService";
+import { Modal } from "@/components/ui/Modal";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Button } from "@/components/ui/Button";
 
 export default function Sidebar() {
   const notes = useNoteStore((s) => s.notes);
@@ -478,40 +481,37 @@ export default function Sidebar() {
 
       {/* ── 삭제 확인 모달 (1단계) ── */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 print:hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">기록 삭제 경고</h3>
-            <p className="text-gray-600 dark:text-gray-300 mb-8 font-medium leading-relaxed">선택한 <span className="font-bold text-red-600 dark:text-red-400">{selectedIds.length}건</span>의 기록을<br />정말로 삭제하시겠습니까?</p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowDeleteModal(false)} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">아니오</button>
-              <button onClick={handleDeleteStep1Confirm} className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg transition-colors">예 (삭제)</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          tone="danger"
+          title="기록 삭제 경고"
+          cancelLabel="아니오"
+          confirmLabel="예 (삭제)"
+          onCancel={() => setShowDeleteModal(false)}
+          onConfirm={handleDeleteStep1Confirm}
+        >
+          선택한 <span className="font-bold text-red-600 dark:text-red-400">{selectedIds.length}건</span>의 기록을<br />정말로 삭제하시겠습니까?
+        </ConfirmDialog>
       )}
 
       {/* ── 삭제 2단계: 비밀번호 확인 ── */}
       {showPwConfirm && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">본인 확인 비밀번호</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-6 font-medium text-sm text-center">삭제를 완료하려면 치료사의<br />비밀번호를 다시 입력해주세요.</p>
-            <label htmlFor="confirm-delete-pw" className="sr-only">비밀번호 입력</label>
-            <input id="confirm-delete-pw" type="password" value={deletePw} onChange={(e) => { setDeletePw(e.target.value); setDeletePwError(""); }} placeholder="비밀번호 입력"
-              className="w-full p-4 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 text-center font-bold tracking-widest outline-none mb-3" autoFocus />
-            {deletePwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{deletePwError}</p>}
-            <div className="flex gap-3">
-              <button onClick={() => { setShowPwConfirm(false); setDeletePw(""); }} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
-              <button onClick={handleDeleteStep2Confirm} className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg transition-colors">삭제 확인</button>
-            </div>
+        <Modal layer="top" size="sm">
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">본인 확인 비밀번호</h3>
+          <p className="text-gray-500 dark:text-gray-400 mb-6 font-medium text-sm text-center">삭제를 완료하려면 치료사의<br />비밀번호를 다시 입력해주세요.</p>
+          <label htmlFor="confirm-delete-pw" className="sr-only">비밀번호 입력</label>
+          <input id="confirm-delete-pw" type="password" value={deletePw} onChange={(e) => { setDeletePw(e.target.value); setDeletePwError(""); }} placeholder="비밀번호 입력"
+            className="w-full p-4 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 text-center font-bold tracking-widest outline-none mb-3" autoFocus />
+          {deletePwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{deletePwError}</p>}
+          <div className="flex gap-3">
+            <Button type="button" variant="secondary" className="flex-1" onClick={() => { setShowPwConfirm(false); setDeletePw(""); }}>취소</Button>
+            <Button type="button" variant="danger" className="flex-1" onClick={handleDeleteStep2Confirm}>삭제 확인</Button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* ── 데이터 내보내기 (본인 확인 + 백업 암호 설정) ── */}
       {showExportPwConfirm && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <Modal layer="top" size="sm">
             <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">데이터 내보내기</h3>
             <p className="text-gray-500 dark:text-gray-400 mb-4 font-medium text-sm text-center">환자 정보 전체가 포함된 백업 파일입니다.<br />본인 비밀번호를 다시 입력해주세요.</p>
 
@@ -541,35 +541,31 @@ export default function Sidebar() {
 
             {exportPwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{exportPwError}</p>}
             <div className="flex gap-3">
-              <button onClick={() => { setShowExportPwConfirm(false); setExportPw(""); setBackupPassphrase(""); setBackupPassphrase2(""); setExportPlain(false); }} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
-              <button onClick={handleExportConfirm} className="flex-1 py-3.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-lg transition-colors">내보내기</button>
+              <Button type="button" variant="secondary" className="flex-1" onClick={() => { setShowExportPwConfirm(false); setExportPw(""); setBackupPassphrase(""); setBackupPassphrase2(""); setExportPlain(false); }}>취소</Button>
+              <Button type="button" variant="primary" className="flex-1" onClick={handleExportConfirm}>내보내기</Button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* ── 암호화 백업 가져오기 — 백업 암호 입력 ── */}
       {pendingImportText && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">암호화된 백업 파일</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-6 font-medium text-sm text-center">이 백업은 암호로 보호되어 있습니다.<br />내보낼 때 설정한 백업 암호를 입력해주세요.</p>
-            <label htmlFor="import-passphrase" className="sr-only">백업 암호 입력</label>
-            <input id="import-passphrase" type="password" value={importPassphrase} onChange={(e) => { setImportPassphrase(e.target.value); setImportPwError(""); }} placeholder="백업 암호 입력"
-              className="w-full p-4 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 text-center font-bold tracking-widest outline-none mb-3" autoFocus />
-            {importPwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{importPwError}</p>}
-            <div className="flex gap-3">
-              <button onClick={() => { setPendingImportText(null); setImportPassphrase(""); }} className="flex-1 py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors">취소</button>
-              <button onClick={handleEncryptedImportConfirm} className="flex-1 py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl shadow-lg transition-colors">가져오기</button>
-            </div>
+        <Modal layer="top" size="sm">
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 text-center text-balance">암호화된 백업 파일</h3>
+          <p className="text-gray-500 dark:text-gray-400 mb-6 font-medium text-sm text-center">이 백업은 암호로 보호되어 있습니다.<br />내보낼 때 설정한 백업 암호를 입력해주세요.</p>
+          <label htmlFor="import-passphrase" className="sr-only">백업 암호 입력</label>
+          <input id="import-passphrase" type="password" value={importPassphrase} onChange={(e) => { setImportPassphrase(e.target.value); setImportPwError(""); }} placeholder="백업 암호 입력"
+            className="w-full p-4 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 text-center font-bold tracking-widest outline-none mb-3" autoFocus />
+          {importPwError && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mb-3">{importPwError}</p>}
+          <div className="flex gap-3">
+            <Button type="button" variant="secondary" className="flex-1" onClick={() => { setPendingImportText(null); setImportPassphrase(""); }}>취소</Button>
+            <Button type="button" variant="primary" className="flex-1" onClick={handleEncryptedImportConfirm}>가져오기</Button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* ── 이관 모달 ── */}
       {transferSource && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+        <Modal layer="raised" size="sm">
             <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">기록 이관</h3>
             <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm">퇴사한 {transferSource.therapistName}의 모든 기록을<br />아래 치료사 중 한 명에게 이관합니다.</p>
             <ul className="space-y-2 max-h-48 overflow-y-auto mb-6">
@@ -591,9 +587,8 @@ export default function Sidebar() {
                 </li>
               ))}
             </ul>
-            <button onClick={() => setTransferSource(null)} className="w-full py-3.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl">취소</button>
-          </div>
-        </div>
+            <Button type="button" variant="secondary" className="w-full" onClick={() => setTransferSource(null)}>취소</Button>
+        </Modal>
       )}
     </div>
   );

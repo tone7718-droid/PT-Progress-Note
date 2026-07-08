@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 
 interface LoginModalProps {
   onClose: () => void;
@@ -44,8 +46,7 @@ export default function LoginModal({ onClose, hideCancel }: LoginModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all">
+    <Modal layer="login" size="plain">
         <div className="p-8">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6 text-center tracking-tight">치료사 로그인</h2>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -65,15 +66,12 @@ export default function LoginModal({ onClose, hideCancel }: LoginModalProps) {
             {error && <p className="text-red-500 dark:text-red-400 text-sm font-bold text-center mt-2">{error}</p>}
             <div className="pt-6 flex gap-3">
               {!hideCancel && (
-                <button type="button" onClick={onClose}
-                  className="flex-[0.4] py-4 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-bold text-lg rounded-2xl transition-all">취소</button>
+                <Button type="button" variant="secondary" size="lg" className="flex-[0.4] px-0" onClick={onClose}>취소</Button>
               )}
-              <button type="submit" disabled={loading}
-                className="flex-1 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-2xl shadow-lg transition-all focus:ring-4 focus:ring-blue-500/40">{loading ? "인증 중..." : "로그인"}</button>
+              <Button type="submit" variant="primary" size="lg" className="flex-1" disabled={loading}>{loading ? "인증 중..." : "로그인"}</Button>
             </div>
           </form>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
