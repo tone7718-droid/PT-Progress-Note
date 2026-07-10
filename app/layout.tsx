@@ -41,7 +41,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className={`${geistMono.variable} antialiased`}>
-        {/* 서비스 워커: 기존 등록이 있으면 언레지스터 (디버깅용 — 필요 시 복원) */}
+        {/* 서비스 워커 언레지스터 (의도적 유지) — 과거 버전이 등록해 둔 SW 가
+            오래된 자산을 계속 서빙하는 것을 방지. 오프라인 캐싱은 현재 미지원
+            정책이며, PWA 는 "설치형(홈 화면 추가)"까지만 제공한다. */}
         <script
           dangerouslySetInnerHTML={{
             __html: `

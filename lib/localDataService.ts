@@ -254,13 +254,8 @@ export async function reauthenticate(
    동명이인 구분을 위해 노트마다 내부 환자 ID를 부여한다.
    매칭 규칙: 차트번호 → 이름+생년월일 → (백필 한정) 이름 단독 → 신규 발급 */
 
-function resolvePatientId(
-  note: NoteData,
-  pool: NoteData[],
-  options: { allowNameOnly?: boolean } = {}
-): string {
-  if (note.patientId) return note.patientId;
-
+/** pool 에서 동일 환자로 볼 수 있는 patientId 를 찾는다 (차트번호 → 이름+생년월일). 없으면 null. */
+function findMatchingPatientId(note: NoteData, pool: NoteData[]): string | null {
   const chartNo = note.chartNo?.trim();
   if (chartNo) {
     const match = pool.find((n) => n.patientId && n.chartNo?.trim() === chartNo);
@@ -276,9 +271,33 @@ function resolvePatientId(
     if (match?.patientId) return match.patientId;
   }
 
-  // 구데이터 백필용: 식별 정보가 이름뿐인 노트도 같은 환자로 묶는다
-  if (options.allowNameOnly && name) {
-    const match = pool.find((n) => n.patientId && n.patientName?.trim() === name);
+  return null;
+}
+
+function resolvePatientId(
+  note: NoteData,
+  pool: NoteData[],
+  options: { allowNameOnly?: boolean } = {}
+): string {
+  if (note.patientId) return note.patientId;
+
+  const matched = findMatchingPatientId(note, pool);
+  if (matched) return matched;
+
+  // 구데이터 백필용 이름 단독 매칭 — 동명이인 오병합을 막기 위해
+  // "양쪽 모두 차트번호·생년월일이 전혀 없는" 완전히 구분 불가능한
+  // 레코드끼리만 묶는다. (생년월일이 다른 동명이인은 절대 병합하지 않음)
+  const name = note.patientName?.trim();
+  const birth = note.birthDate?.trim();
+  const chartNo = note.chartNo?.trim();
+  if (options.allowNameOnly && name && !birth && !chartNo) {
+    const match = pool.find(
+      (n) =>
+        n.patientId &&
+        n.patientName?.trim() === name &&
+        !n.birthDate?.trim() &&
+        !n.chartNo?.trim()
+    );
     if (match?.patientId) return match.patientId;
   }
 
@@ -611,6 +630,20 @@ export async function importNotes(notes: NoteData[]): Promise<ImportNotesResult>
   }
 
   if (newOnes.length === 0) return { added: 0, skippedInvalid };
+
+  // 기기 간 patientId 재조정 — 백업의 patientId 는 다른 기기에서 발급된
+  // 값일 수 있으므로, 이 기기의 동일 환자(차트번호/이름+생년월일 매칭)가
+  // 있으면 그 patientId 로 재매핑한다. 같은 수입 patientId 를 공유하던
+  // 노트들은 재매핑 후에도 같은 그룹을 유지한다.
+  const pidRemap = new Map<string, string>();
+  for (const n of newOnes) {
+    if (!n.patientId) continue;
+    if (!pidRemap.has(n.patientId)) {
+      const local = findMatchingPatientId(n, existing);
+      pidRemap.set(n.patientId, local ?? n.patientId);
+    }
+    n.patientId = pidRemap.get(n.patientId);
+  }
 
   // patientId 가 없는 노트에는 기존+가져오는 노트 전체를 기준으로 부여
   const pool = [...existing, ...newOnes];

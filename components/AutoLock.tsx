@@ -15,11 +15,15 @@ import { useAuthStore } from "@/store/useAuthStore";
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30분
 const CHECK_INTERVAL_MS = 30 * 1000;
 
+/* pointermove/scroll 포함 — 입력 없이 화면을 읽거나 스크롤만 하는 사용자가
+   30분 뒤 갑자기 로그아웃되지 않도록. (ref 갱신만 하므로 비용 무시 가능) */
 const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
   "pointerdown",
+  "pointermove",
   "keydown",
   "touchstart",
   "wheel",
+  "scroll",
 ];
 
 export default function AutoLock() {

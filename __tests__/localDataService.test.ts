@@ -441,6 +441,35 @@ describe("localDataService — patientId", () => {
     expect(again.patientId).toBe(first.patientId);
   });
 
+  it("does NOT merge same-name patients with different birth dates during backfill", async () => {
+    const legacy = [
+      sampleNote({ id: "p1", chartNo: "", patientName: "김철수", birthDate: "1980-01-01" }),
+      sampleNote({ id: "p2", chartNo: "", patientName: "김철수", birthDate: "1999-12-31" }),
+    ];
+    window.localStorage.setItem("pt_local_notes", JSON.stringify(legacy)); // 구버전 평문 주입
+    const all = await ds.fetchNotes();
+    const a = all.find((n) => n.id === "p1")!;
+    const b = all.find((n) => n.id === "p2")!;
+    expect(a.patientId).toBeTruthy();
+    expect(b.patientId).not.toBe(a.patientId); // 동명이인 보호
+  });
+
+  it("remaps imported patientIds to the local patient (기기 간 재조정)", async () => {
+    // 이 기기: 차트번호 C-100 환자
+    const local = await ds.upsertNote(sampleNote({ id: "loc-1", chartNo: "C-100", patientName: "김철수" }));
+
+    // 다른 기기 백업: 같은 차트번호지만 다른 patientId 로 발급된 노트 2건
+    const result = await ds.importNotes([
+      sampleNote({ id: "imp-1", chartNo: "C-100", patientName: "김철수", patientId: "foreign-pid" }),
+      sampleNote({ id: "imp-2", chartNo: "C-100", patientName: "김철수", patientId: "foreign-pid" }),
+    ]);
+    expect(result.added).toBe(2);
+
+    const all = await ds.fetchNotes();
+    expect(all.find((n) => n.id === "imp-1")!.patientId).toBe(local.patientId);
+    expect(all.find((n) => n.id === "imp-2")!.patientId).toBe(local.patientId);
+  });
+
   it("backfills patientId for legacy notes on fetch", async () => {
     const legacy = [
       sampleNote({ id: "l1", patientName: "이영희" }),
