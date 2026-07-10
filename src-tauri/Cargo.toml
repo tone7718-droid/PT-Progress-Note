@@ -25,3 +25,6 @@ tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# AES 키를 OS 보안 저장소(Windows 자격 증명 관리자 / macOS Keychain /
+# Linux Secret Service)에 보관하기 위한 크레이트
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native-sync-persistent", "crypto-rust"] }

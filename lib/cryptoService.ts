@@ -1,17 +1,56 @@
-/* ── AES-GCM localStorage 암호화 서비스 ──
+/* ── AES-GCM 암호화 서비스 ──
  *
- * 랜덤 256-bit 키를 최초 실행 시 생성해 별도 localStorage 슬롯에 보관.
- * 환자 노트(pt_local_notes)를 암호화해 평문 노출을 방지.
- * 내보내기/가져오기는 localDataService에서 복호화 후 처리해 서식이 유지됨.
+ * 랜덤 256-bit 키를 최초 실행 시 생성해 보관하고, 환자 노트(pt_local_notes)를
+ * 암호화해 평문 노출을 방지. 내보내기/가져오기는 localDataService에서
+ * 복호화 후 처리해 서식이 유지됨.
+ *
+ * 키 보관 위치:
+ *  - Tauri 데스크톱: OS 보안 저장소 (Windows 자격 증명 관리자 / macOS
+ *    Keychain / Linux Secret Service) — src-tauri 의 keyring 커맨드 경유.
+ *    기존 localStorage 키는 최초 실행 시 키링으로 자동 이관.
+ *  - 웹/모바일: localStorage 폴백. 이 경우 키가 암호문과 같은 저장소라
+ *    기기(브라우저 프로필) 접근자에게는 보호가 되지 않음 (README 참고).
  */
 
-/* 한계: 키가 암호문과 같은 localStorage 에 저장되므로 기기(브라우저 프로필)
- * 접근자에게는 보호가 되지 않는다. 근본 해결은 Tauri(데스크톱)에서 OS 보안
- * 저장소(Windows DPAPI / macOS Keychain)에 키를 보관하는 것 — Rust 측
- * keyring 연동이 필요해 향후 과제 (README "Security Model" 참고). */
+import { isTauri } from "@/lib/isTauri";
+
 const ENC_KEY_STORAGE = "pt_enc_key_v1";
 
 let _cachedKey: CryptoKey | null = null;
+
+async function loadStoredKeyHex(): Promise<string | null> {
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const fromKeyring = await invoke<string | null>("keyring_get_enc_key");
+      if (fromKeyring) return fromKeyring;
+      // 구버전이 localStorage 에 두었던 키를 키링으로 1회 이관
+      const legacy = window.localStorage.getItem(ENC_KEY_STORAGE);
+      if (legacy) {
+        await invoke("keyring_set_enc_key", { value: legacy });
+        window.localStorage.removeItem(ENC_KEY_STORAGE);
+        return legacy;
+      }
+      return null;
+    } catch {
+      /* 키링 사용 불가 (Secret Service 미기동 등) → localStorage 폴백 */
+    }
+  }
+  return window.localStorage.getItem(ENC_KEY_STORAGE);
+}
+
+async function persistKeyHex(hex: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("keyring_set_enc_key", { value: hex });
+      return;
+    } catch {
+      /* 키링 사용 불가 → localStorage 폴백 */
+    }
+  }
+  window.localStorage.setItem(ENC_KEY_STORAGE, hex);
+}
 
 function bufToHex(buf: Uint8Array<ArrayBuffer>): string {
   return Array.from(buf)
@@ -31,7 +70,7 @@ async function getKey(): Promise<CryptoKey> {
   if (_cachedKey) return _cachedKey;
   if (typeof window === "undefined") throw new Error("browser-only");
 
-  const stored = window.localStorage.getItem(ENC_KEY_STORAGE);
+  const stored = await loadStoredKeyHex();
   if (stored) {
     _cachedKey = await crypto.subtle.importKey(
       "raw",
@@ -49,7 +88,7 @@ async function getKey(): Promise<CryptoKey> {
     ["encrypt", "decrypt"]
   );
   const exported = await crypto.subtle.exportKey("raw", _cachedKey);
-  window.localStorage.setItem(ENC_KEY_STORAGE, bufToHex(new Uint8Array(exported)));
+  await persistKeyHex(bufToHex(new Uint8Array(exported)));
   return _cachedKey;
 }
 
