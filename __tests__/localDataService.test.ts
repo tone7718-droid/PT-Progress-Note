@@ -454,6 +454,26 @@ describe("localDataService — patientId", () => {
 });
 
 describe("localDataService — import validation & auto-backup restore", () => {
+  it("accepts legacy notes with missing rom / string painScore (관대한 정규화)", async () => {
+    const legacyNoRom = { ...sampleNote({ id: "legacy-1" }) } as Record<string, unknown>;
+    delete legacyNoRom.rom; // 구버전: rom 필드 자체가 없음
+    const legacyStringScore = sampleNote({ id: "legacy-2", painScore: "5" as never });
+    const outOfRange = sampleNote({ id: "legacy-3", painScore: 99 as never });
+
+    const result = await ds.importNotes([
+      legacyNoRom as unknown as NoteData,
+      legacyStringScore,
+      outOfRange,
+    ]);
+    expect(result.added).toBe(3);
+    expect(result.skippedInvalid).toBe(0);
+
+    const all = await ds.fetchNotes();
+    expect(all.find((n) => n.id === "legacy-1")!.rom).toEqual([]);
+    expect(all.find((n) => n.id === "legacy-2")!.painScore).toBe(5);
+    expect(all.find((n) => n.id === "legacy-3")!.painScore).toBeNull(); // 범위 밖 → 미기록 처리
+  });
+
   it("skips malformed notes and reports the count (조용히 버리지 않음)", async () => {
     const good = sampleNote({ id: "ok-1" });
     const bad = { id: "bad-1", patientName: 123 } as unknown as NoteData; // rom/savedAt 등 구조 불일치

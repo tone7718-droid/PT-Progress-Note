@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { X, Save, Sparkles, Check } from "lucide-react";
 import { loadMacros, saveMacros } from "@/lib/macros";
+import { Modal } from "@/components/ui/Modal";
 
 interface MacroManagementModalProps {
   onClose: () => void;
@@ -49,8 +50,7 @@ export default function MacroManagementModal({ onClose }: MacroManagementModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <Modal layer="base" size="lg">
         {/* 헤더 */}
         <div className="px-4 py-3 sm:px-8 sm:py-6 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2 bg-gray-50/50 dark:bg-slate-950/40">
           <h2 className="text-sm sm:text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 min-w-0">
@@ -123,7 +123,6 @@ export default function MacroManagementModal({ onClose }: MacroManagementModalPr
             <Save size={16} /> 저장
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

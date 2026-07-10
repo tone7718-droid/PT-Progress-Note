@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { KeyRound, X, ShieldCheck } from "lucide-react";
 import { validateNewPassword, PASSWORD_MIN, PASSWORD_MAX } from "@/lib/passwordPolicy";
+import { Modal } from "@/components/ui/Modal";
 
 interface ChangePasswordModalProps {
   onClose: () => void;
@@ -86,8 +87,7 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
     "w-full p-3.5 border-2 border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 font-medium tracking-wider placeholder:text-gray-400 dark:placeholder:text-gray-500";
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200 print:hidden">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+    <Modal layer="top" size="plain">
         <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <KeyRound size={20} className="text-blue-600 dark:text-blue-400" /> 비밀번호 변경
@@ -195,7 +195,6 @@ export default function ChangePasswordModal({ onClose }: ChangePasswordModalProp
             </div>
           </form>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

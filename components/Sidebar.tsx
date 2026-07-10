@@ -17,6 +17,17 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Button } from "@/components/ui/Button";
 
+/** 타임아웃 레이스 — settle 후 타이머를 반드시 정리 (유령 타이머 방지) */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 export default function Sidebar() {
   const notes = useNoteStore((s) => s.notes);
   const selectedNoteId = useNoteStore((s) => s.selectedNoteId);
@@ -113,12 +124,11 @@ export default function Sidebar() {
     }
     setExportPwError("");
     try {
-      const ok = await Promise.race<boolean>([
+      const ok = await withTimeout(
         reauthenticate(therapist.id, exportPw),
-        new Promise<boolean>((_, rej) =>
-          setTimeout(() => rej(new Error("비밀번호 확인 시간 초과")), 10000)
-        ),
-      ]);
+        10000,
+        "비밀번호 확인 시간 초과"
+      );
       if (!ok) {
         setExportPwError("비밀번호가 일치하지 않습니다.");
         return;
@@ -253,24 +263,19 @@ export default function Sidebar() {
     setDeletePwError("");
     try {
       // 1) 비밀번호 재확인 (10초 타임아웃)
-      const ok = await Promise.race<boolean>([
+      const ok = await withTimeout(
         reauthenticate(therapist.id, deletePw),
-        new Promise<boolean>((_, rej) =>
-          setTimeout(() => rej(new Error("비밀번호 확인 시간 초과")), 10000)
-        ),
-      ]);
+        10000,
+        "비밀번호 확인 시간 초과"
+      );
       if (!ok) {
         setDeletePwError("비밀번호가 일치하지 않습니다.");
         return;
       }
 
-      // 2) 실제 삭제 (15초 타임아웃)
-      await Promise.race<void>([
-        deleteNotes(selectedIds),
-        new Promise<void>((_, rej) =>
-          setTimeout(() => rej(new Error("삭제 요청 시간 초과")), 15000)
-        ),
-      ]);
+      // 2) 실제 삭제 — localStorage 쓰기라 즉시 완료됨. 타임아웃 레이스를 걸면
+      //    실제로는 삭제가 반영됐는데 "시간 초과" 오류로 오인 표시될 수 있어 제거.
+      await deleteNotes(selectedIds);
 
       // 3) 모달/상태 정리
       setIsDeleteMode(false);

@@ -49,6 +49,28 @@ function sanitizeString(val: unknown): string {
     .slice(0, MAX_FIELD_LENGTH);
 }
 
+/** 구버전/외부 백업의 결측·형식 이탈 필드를 스키마 검증 전에 정규화.
+    (정당한 옛 데이터가 zod 에서 통째로 거부되지 않도록) */
+function normalizeNoteShape(note: NoteData): NoteData {
+  const rawScore = note.painScore as unknown;
+  const score =
+    typeof rawScore === "number" ? rawScore : typeof rawScore === "string" ? Number(rawScore) : null;
+  return {
+    ...note,
+    rom: Array.isArray(note.rom)
+      ? note.rom.map((r) => ({
+          joint: typeof r?.joint === "string" ? r.joint : "",
+          measuredROM: typeof r?.measuredROM === "string" ? r.measuredROM : "",
+          normalRange: typeof r?.normalRange === "string" ? r.normalRange : "",
+        }))
+      : [],
+    painScore:
+      typeof score === "number" && Number.isFinite(score) && score >= 0 && score <= 10
+        ? score
+        : null,
+  };
+}
+
 function sanitizeNote(note: NoteData): NoteData {
   return {
     ...note,
@@ -580,8 +602,8 @@ export async function importNotes(notes: NoteData[]): Promise<ImportNotesResult>
   const newOnes: NoteData[] = [];
   for (const raw of notes) {
     if (!raw || typeof raw !== "object") { skippedInvalid++; continue; }
-    // 구버전 painAreas 형식(PainEntry[] 등)을 먼저 정규화한 뒤 스키마 검증
-    const normalized = sanitizeNote(sanitizePainAreas(raw as NoteData));
+    // 구버전 painAreas/rom/painScore 형식을 먼저 정규화한 뒤 스키마 검증
+    const normalized = sanitizeNote(normalizeNoteShape(sanitizePainAreas(raw as NoteData)));
     const parsed = NoteDataSchema.safeParse(normalized);
     if (!parsed.success) { skippedInvalid++; continue; }
     if (existingIds.has(normalized.id)) continue; // 중복은 오류가 아님 — 조용히 스킵

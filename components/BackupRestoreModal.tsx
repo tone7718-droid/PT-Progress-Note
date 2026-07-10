@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useNoteStore } from "@/store/useNoteStore";
 import type { BackupSnapshot, BackupReason } from "@/lib/autoBackup";
 import { X, History, RotateCcw } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface BackupRestoreModalProps {
@@ -59,8 +60,8 @@ export default function BackupRestoreModal({ onClose }: BackupRestoreModalProps)
   };
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+    <>
+      <Modal layer="base" size="lg" panelClassName="max-w-lg max-h-[85vh]">
         {/* 헤더 */}
         <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
@@ -104,7 +105,7 @@ export default function BackupRestoreModal({ onClose }: BackupRestoreModalProps)
             </ul>
           )}
         </div>
-      </div>
+      </Modal>
 
       {/* 복원 확인 */}
       {confirming && (
@@ -124,6 +125,6 @@ export default function BackupRestoreModal({ onClose }: BackupRestoreModalProps)
           </span>
         </ConfirmDialog>
       )}
-    </div>
+    </>
   );
 }

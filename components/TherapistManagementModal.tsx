@@ -136,8 +136,8 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
   };
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <>
+      <Modal layer="base" size="lg">
         {/* 헤더 */}
         <div className="px-8 py-6 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between bg-gray-50/50 dark:bg-slate-950/40">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
@@ -243,7 +243,7 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
             </div>
           )}
         </div>
-      </div>
+      </Modal>
 
       {/* 퇴사 확인 모달 */}
       {resigningTherapist && (
@@ -257,7 +257,7 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
           onConfirm={handleResign}
         >
           <span className="font-bold text-red-500">{resigningTherapist.name} ({resigningTherapist.id})</span>을(를)<br />퇴사 처리하시겠습니까?<br />
-          <span className="text-xs text-gray-400 mt-2 block">※ 해당 ID는 즉시 해제되어 재사용 가능해집니다.</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500 mt-2 block">※ 해당 ID는 즉시 해제되어 재사용 가능해집니다.</span>
         </ConfirmDialog>
       )}
 
@@ -297,9 +297,9 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
           onConfirm={handleDelete}
         >
           <span className="font-bold text-red-500">{deletingTherapist.name}</span>의 퇴사 기록을<br />목록에서 영구 삭제하시겠습니까?<br />
-          <span className="text-xs text-gray-400 mt-2 block">※ 이 치료사가 작성한 기존 노트는 그대로 유지됩니다.</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500 mt-2 block">※ 이 치료사가 작성한 기존 노트는 그대로 유지됩니다.</span>
         </ConfirmDialog>
       )}
-    </div>
+    </>
   );
 }

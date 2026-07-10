@@ -13,6 +13,7 @@ import {
   Legend,
 } from "recharts";
 import { X, TrendingUp, Activity } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
 
 interface PatientTrendChartProps {
   patientId?: string;
@@ -89,8 +90,7 @@ export default function PatientTrendChart({ patientId, patientName, chartNo, onC
   }, [patientNotes, effectiveJoint]);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+    <Modal layer="raised" size="lg">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-slate-700 shrink-0">
           <div>
@@ -254,7 +254,6 @@ export default function PatientTrendChart({ patientId, patientName, chartNo, onC
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

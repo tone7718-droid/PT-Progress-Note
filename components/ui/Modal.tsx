@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/utils/cn";
 
 /**
@@ -49,7 +50,14 @@ export function Modal({
   panelClassName,
   children,
 }: ModalProps) {
-  return (
+  /* document.body 로 포털 렌더 — 모바일 drawer 처럼 transform 이 걸린 조상
+     안에서 열려도 fixed 오버레이가 뷰포트 전체를 덮도록 보장.
+     (transform 은 fixed 자손의 containing block 이 되는 CSS 함정) */
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       className={cn(
         "fixed inset-0 flex items-center justify-center p-4 print:hidden animate-in fade-in duration-200",
@@ -72,6 +80,7 @@ export function Modal({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -18,7 +18,6 @@ import { ClinicalSections } from "./features/note-form/ClinicalSections";
 
 export default function ProgressNoteForm() {
   const selectedNoteId = useNoteStore((s) => s.selectedNoteId);
-  const notes = useNoteStore((s) => s.notes);
   const saveNote = useNoteStore((s) => s.saveNote);
   const selectNote = useNoteStore((s) => s.selectNote);
   const therapist = useAuthStore((s) => s.therapist);
@@ -99,14 +98,16 @@ export default function ProgressNoteForm() {
     // 기존 노트 편집 모드 → draft 배너 숨김
     setPendingDraft(null);
     setLastDraftAt(null);
-    const note = notes.find((n) => n.id === selectedNoteId);
+    // notes 는 구독하지 않고 스냅샷으로만 읽는다 — notes 배열 정체성 변경
+    // (다른 노트 삭제/이관/가져오기 등)이 작성 중인 폼을 리셋하지 않도록.
+    const note = useNoteStore.getState().notes.find((n) => n.id === selectedNoteId);
     if (note) {
       const roms = note.rom && note.rom.length > 0 ? note.rom : [{ joint: "", measuredROM: "", normalRange: "" }];
       reset({ ...note, rom: roms });
       setCurrentNoteId(note.id ?? null);
       setSavedTherapist(note.therapist ?? null);
     }
-  }, [selectedNoteId, notes, reset]);
+  }, [selectedNoteId, reset]);
 
   /* ── 자동 임시 저장 (5초 주기) ──
      새 노트 작성 모드에서만 작동. 빈 폼·직전 저장본과 동일한 내용은 저장 안 함.
