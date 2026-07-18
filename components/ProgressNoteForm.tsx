@@ -9,6 +9,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas-pro";
 import { Save, X as XIcon, Clock, Copy, Printer, FileDown, ChevronDown, Sparkles } from "lucide-react";
 import { loadDraft, saveDraft, clearDraft, isNoteContentful, formatRelativeTime, formatClockTime, type DraftNoteData } from "@/lib/draftNote";
+import { todayLocalISO } from "@/lib/localDate";
 
 import { PatientInfoSection } from "./features/note-form/PatientInfoSection";
 import { ComplaintSection } from "./features/note-form/ComplaintSection";
@@ -80,7 +81,7 @@ export default function ProgressNoteForm() {
         return;
       }
       // [일반 새 노트 모드]
-      reset({ ...EMPTY_NOTE, noteDate: new Date().toISOString().split("T")[0], rom: [{ joint: "", measuredROM: "", normalRange: "" }] });
+      reset({ ...EMPTY_NOTE, noteDate: todayLocalISO(), rom: [{ joint: "", measuredROM: "", normalRange: "" }] });
       setCurrentNoteId(null);
       setSavedTherapist(null);
       setLastDraftAt(null);
@@ -150,7 +151,7 @@ export default function ProgressNoteForm() {
       ...current,
       id: "",
       savedAt: "",
-      noteDate: new Date().toISOString().split("T")[0],
+      noteDate: todayLocalISO(),
       therapist: therapist || null,
       therapistUid: therapist?.uid || "",
     };
@@ -172,7 +173,7 @@ export default function ProgressNoteForm() {
     }
     setValidationErrors([]);
 
-    const effectiveNoteDate = data.noteDate || new Date().toISOString().split("T")[0];
+    const effectiveNoteDate = data.noteDate || todayLocalISO();
     data.noteDate = effectiveNoteDate;
     
     // rom 빈 값 제거

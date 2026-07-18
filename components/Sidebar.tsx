@@ -13,6 +13,7 @@ import BackupRestoreModal from "./BackupRestoreModal";
 import { verifyPassword } from "./hashUtils";
 import { DEFAULT_PASSWORD } from "@/lib/passwordPolicy";
 import { isEncryptedBackup } from "@/lib/localDataService";
+import { todayLocalISO } from "@/lib/localDate";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Button } from "@/components/ui/Button";
@@ -134,7 +135,7 @@ export default function Sidebar() {
         return;
       }
 
-      const dateStr = new Date().toISOString().split("T")[0];
+      const dateStr = todayLocalISO();
       if (exportPlain) {
         downloadTextFile(await exportData(), `pt-progress-notes-backup-${dateStr}.json`);
       } else {
