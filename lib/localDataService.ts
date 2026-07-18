@@ -16,7 +16,8 @@
  * (이전 클라우드 코드는 git history `14316af` 이전 커밋에서 참조 가능)
  */
 
-import { NoteDataSchema, type NoteData, type TherapistRecord, type Therapist } from "@/types";
+import { NoteDataSchema, type NoteData, type TherapistRecord, type Therapist, type PainEntry, type PainLevel, type PainView } from "@/types";
+import { ANT_CENTER, ANT_PAIRED, POST_CENTER, POST_PAIRED } from "@/components/bodyDiagramShapes";
 import { hashPassword, verifyPassword, isLegacyHash } from "@/components/hashUtils";
 import {
   encryptData,
@@ -336,42 +337,81 @@ async function ensurePatientIds(notes: NoteData[]): Promise<NoteData[]> {
 
 /**
  * painAreas 형식 정규화.
- * 신규 형식: Record<string, number> (부위명 → 1|2|3). BodyDiagram 과 공유.
+ * 표준 형식: PainEntry[] ({view, region, painLevel}) — 자매 앱들과 공유.
  * 구버전 형식 마이그레이션:
- *   - PainEntry[] ({view, region, painLevel}): region 기준으로 병합 → Record. view 는 버림
- *     (신규 컴포넌트는 부위명이 좌/우를 포함하고 view 를 식별에 쓰지 않음).
+ *   - Record<string, number> (부위명 → 1|2|3): 부위명으로 view 를 역추정해
+ *     PainEntry[] 로 변환. 전면·후면 양쪽에 존재하는 부위명(전완·종아리 등)은
+ *     구형식에 view 정보가 없어 전면(anterior)으로 귀속 (결정적 규칙).
  *   - string[] (v0.1.3 이전 부위 ID 배열): 호환 변환 불가 → 비움.
  */
+const VALID_VIEWS = new Set<string>(["anterior", "posterior"]);
+
+let _regionViewMap: Map<string, PainView> | null = null;
+
+/** 부위명 → view 매핑 (도해 데이터에서 생성, 전면 우선) */
+function getRegionViewMap(): Map<string, PainView> {
+  if (_regionViewMap) return _regionViewMap;
+  const m = new Map<string, PainView>();
+  const add = (name: string, view: PainView) => {
+    if (!m.has(name)) m.set(name, view);
+  };
+  for (const s of ANT_CENTER) add(s.name, "anterior");
+  for (const s of ANT_PAIRED) {
+    add(`우측 ${s.base}`, "anterior");
+    add(`좌측 ${s.base}`, "anterior");
+  }
+  for (const s of POST_CENTER) add(s.name, "posterior");
+  for (const s of POST_PAIRED) {
+    add(`우측 ${s.base}`, "posterior");
+    add(`좌측 ${s.base}`, "posterior");
+  }
+  _regionViewMap = m;
+  return m;
+}
+
 function sanitizePainAreas(note: NoteData): NoteData {
   const pa = note.painAreas as unknown;
 
-  // 신규 형식 (Record<string, number>) — 값 범위(1~3)만 검증
-  if (pa && typeof pa === "object" && !Array.isArray(pa)) {
-    const clean: Record<string, number> = {};
-    for (const [region, level] of Object.entries(pa as Record<string, unknown>)) {
-      if (typeof level === "number" && level >= 1 && level <= 3) clean[region] = level;
+  // 표준 형식 (PainEntry[]) — 항목별 구조·범위 검증
+  if (Array.isArray(pa)) {
+    const clean: PainEntry[] = [];
+    for (const item of pa) {
+      if (item && typeof item === "object" && "region" in item && "painLevel" in item) {
+        const { view, region, painLevel } = item as { view?: unknown; region?: unknown; painLevel?: unknown };
+        if (
+          typeof region === "string" &&
+          typeof painLevel === "number" &&
+          painLevel >= 1 &&
+          painLevel <= 3 &&
+          typeof view === "string" &&
+          VALID_VIEWS.has(view)
+        ) {
+          clean.push({ view: view as PainView, region, painLevel: painLevel as PainLevel });
+        }
+      }
+      // string[] 등 그 외 항목은 변환 불가 → 무시
     }
     return { ...note, painAreas: clean };
   }
 
-  // 구버전 PainEntry[] → Record<string, number>
-  if (Array.isArray(pa)) {
-    const rec: Record<string, number> = {};
-    for (const item of pa) {
-      if (item && typeof item === "object" && "region" in item && "painLevel" in item) {
-        const region = (item as { region?: unknown }).region;
-        const level = (item as { painLevel?: unknown }).painLevel;
-        if (typeof region === "string" && typeof level === "number" && level >= 1 && level <= 3) {
-          rec[region] = level;
-        }
+  // 구버전 Record<string, number> → PainEntry[] (부위명으로 view 역추정)
+  if (pa && typeof pa === "object") {
+    const regionView = getRegionViewMap();
+    const entries: PainEntry[] = [];
+    for (const [region, level] of Object.entries(pa as Record<string, unknown>)) {
+      if (typeof level === "number" && level >= 1 && level <= 3) {
+        entries.push({
+          view: regionView.get(region) ?? "anterior",
+          region,
+          painLevel: level as PainLevel,
+        });
       }
-      // string[] 등 그 외 형식은 변환 불가 → 무시
     }
-    return { ...note, painAreas: rec };
+    return { ...note, painAreas: entries };
   }
 
   // null/undefined 등
-  return { ...note, painAreas: {} };
+  return { ...note, painAreas: [] };
 }
 
 export async function fetchNotes(): Promise<NoteData[]> {

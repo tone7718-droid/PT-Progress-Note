@@ -12,7 +12,7 @@ const sampleNote = (overrides: Partial<NoteData> = {}): NoteData => ({
   diagnosis: "",
   pmh: "",
   painScore: null,
-  painAreas: {},
+  painAreas: [],
   chiefComplaint: "",
   rom: [],
   postural: "",
@@ -151,31 +151,44 @@ describe("localDataService — notes CRUD", () => {
 });
 
 describe("localDataService — painAreas migration", () => {
-  it("migrates legacy PainEntry[] to Record<string, number> on fetch", async () => {
-    const legacyPainAreas = [
-      { view: "anterior", region: "우측 대흉근", painLevel: 2 },
-      { view: "posterior", region: "좌측 광배근", painLevel: 3 },
-    ];
-    // 구버전 형식을 강제로 주입 (현재 타입은 Record 라 캐스팅)
+  it("migrates legacy Record<string, number> to PainEntry[] on fetch (view 역추정)", async () => {
+    const legacyPainAreas = { "우측 대흉근": 2, "좌측 광배근": 3 };
+    // 구버전 형식을 강제로 주입 (현재 타입은 PainEntry[] 라 캐스팅)
     await ds.upsertNote(sampleNote({ id: "legacy", painAreas: legacyPainAreas as never }));
 
     const all = await ds.fetchNotes();
     const note = all.find((n) => n.id === "legacy")!;
-    expect(note.painAreas).toEqual({ "우측 대흉근": 2, "좌측 광배근": 3 });
+    // 대흉근은 전면 전용, 광배근은 후면 전용 부위 → view 가 정확히 복원됨
+    expect(note.painAreas).toEqual(
+      expect.arrayContaining([
+        { view: "anterior", region: "우측 대흉근", painLevel: 2 },
+        { view: "posterior", region: "좌측 광배근", painLevel: 3 },
+      ])
+    );
+    expect(note.painAreas).toHaveLength(2);
   });
 
   it("clears unconvertible legacy string[] painAreas", async () => {
     await ds.upsertNote(sampleNote({ id: "veryold", painAreas: ["head", "neck"] as never }));
     const all = await ds.fetchNotes();
-    expect(all.find((n) => n.id === "veryold")!.painAreas).toEqual({});
+    expect(all.find((n) => n.id === "veryold")!.painAreas).toEqual([]);
   });
 
-  it("drops out-of-range pain levels from Record form", async () => {
+  it("drops out-of-range pain levels and invalid views", async () => {
     await ds.upsertNote(
-      sampleNote({ id: "rec", painAreas: { "우측 어깨": 2, "좌측 무릎": 9, "허리": 0 } as never })
+      sampleNote({
+        id: "rec",
+        painAreas: [
+          { view: "anterior", region: "우측 대흉근", painLevel: 2 },
+          { view: "anterior", region: "좌측 이두근", painLevel: 9 }, // 범위 밖
+          { view: "sideways", region: "허리", painLevel: 1 }, // 잘못된 view
+        ] as never,
+      })
     );
     const all = await ds.fetchNotes();
-    expect(all.find((n) => n.id === "rec")!.painAreas).toEqual({ "우측 어깨": 2 });
+    expect(all.find((n) => n.id === "rec")!.painAreas).toEqual([
+      { view: "anterior", region: "우측 대흉근", painLevel: 2 },
+    ]);
   });
 });
 
