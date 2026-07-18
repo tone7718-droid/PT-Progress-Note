@@ -37,7 +37,13 @@ export interface NoteData {
   palpation: string;
   specialTest: string;
   treatment: string;
+  /** 치료 직후 통증 점수 (NRS 0~10) — painScore(치료 전)와 비교용. 구버전 노트에는 없음 */
+  painScoreAfter?: number | null;
+  /** 평가 소견 (Assessment) — 치료 반응·호전도·임상적 판단. 구버전 노트에는 없음 */
+  assessment?: string;
   homeExercise: string;
+  /** 계획 (Plan) — 다음 회차 치료 방향. 구버전 노트에는 없음 */
+  plan?: string;
   noteDate: string;
   therapist?: Therapist | null;
   therapistUid?: string;
@@ -46,7 +52,8 @@ export interface NoteData {
 export const EMPTY_NOTE: Omit<NoteData, "id" | "savedAt"> = {
   patientId: "", patientName: "", chartNo: "", birthDate: "", gender: "", diagnosis: "", pmh: "",
   painScore: null, painAreas: {}, chiefComplaint: "", rom: [],
-  postural: "", palpation: "", specialTest: "", treatment: "", homeExercise: "",
+  postural: "", palpation: "", specialTest: "", treatment: "", painScoreAfter: null,
+  assessment: "", homeExercise: "", plan: "",
   noteDate: "", therapist: null, therapistUid: "",
 };
 
@@ -86,7 +93,10 @@ export const NoteDataSchema = z.object({
   palpation: z.string(),
   specialTest: z.string(),
   treatment: z.string(),
+  painScoreAfter: z.number().min(0).max(10).nullish(),
+  assessment: z.string().optional(),
   homeExercise: z.string(),
+  plan: z.string().optional(),
   noteDate: z.string(),
   therapist: TherapistSchema.nullish(),
   therapistUid: z.string().optional(),

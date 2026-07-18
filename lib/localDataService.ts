@@ -55,8 +55,15 @@ function normalizeNoteShape(note: NoteData): NoteData {
   const rawScore = note.painScore as unknown;
   const score =
     typeof rawScore === "number" ? rawScore : typeof rawScore === "string" ? Number(rawScore) : null;
+  const rawAfter = note.painScoreAfter as unknown;
+  const afterScore =
+    typeof rawAfter === "number" ? rawAfter : typeof rawAfter === "string" ? Number(rawAfter) : null;
   return {
     ...note,
+    painScoreAfter:
+      typeof afterScore === "number" && Number.isFinite(afterScore) && afterScore >= 0 && afterScore <= 10
+        ? afterScore
+        : null,
     rom: Array.isArray(note.rom)
       ? note.rom.map((r) => ({
           joint: typeof r?.joint === "string" ? r.joint : "",
@@ -85,7 +92,9 @@ function sanitizeNote(note: NoteData): NoteData {
     palpation: sanitizeString(note.palpation),
     specialTest: sanitizeString(note.specialTest),
     treatment: sanitizeString(note.treatment),
+    assessment: sanitizeString(note.assessment),
     homeExercise: sanitizeString(note.homeExercise),
+    plan: sanitizeString(note.plan),
     noteDate: sanitizeString(note.noteDate),
   };
 }
@@ -388,8 +397,13 @@ export async function upsertNote(note: NoteData): Promise<NoteData> {
   };
 
   const idx = notes.findIndex((n) => n.id === enriched.id);
-  if (idx >= 0) notes[idx] = enriched;
-  else notes.unshift(enriched);
+  if (idx >= 0) {
+    // 기존 노트 덮어쓰기 전 스냅샷 — 의무기록 수정 이력 보존 (실수로 덮어쓴 내용 복원 가능)
+    await snapshotBeforeDestructive("before-edit", notes);
+    notes[idx] = enriched;
+  } else {
+    notes.unshift(enriched);
+  }
   await writeNotes(notes);
   return enriched;
 }

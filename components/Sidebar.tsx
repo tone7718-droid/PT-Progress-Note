@@ -244,7 +244,14 @@ export default function Sidebar() {
         (n.diagnosis ?? "").includes(search) ||
         (n.chartNo ?? "").includes(search)
     )
-    .sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+    .sort((a, b) => {
+      // 시술일(noteDate) 우선 정렬 — 옛 노트를 수정해도(savedAt 갱신) 목록
+      // 순서가 시술 시점 기준으로 유지되도록. 같은 날짜는 savedAt 으로 보조 정렬.
+      const at = new Date(a.noteDate || a.savedAt || 0).getTime();
+      const bt = new Date(b.noteDate || b.savedAt || 0).getTime();
+      if (bt !== at) return bt - at;
+      return new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime();
+    });
 
   const resignedGroups = getResignedTherapistNotes();
   const activeTherapists = therapists.filter((t) => !t.resigned && t.role !== "master");

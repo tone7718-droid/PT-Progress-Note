@@ -52,3 +52,6 @@ next-env.d.ts
 # IDE / dev artifacts
 /.claude/
 /lint_output.txt
+
+# Supabase CLI local artifacts
+supabase/.temp/

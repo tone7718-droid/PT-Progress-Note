@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { useNoteStore } from "@/store/useNoteStore";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -10,6 +10,7 @@ import html2canvas from "html2canvas-pro";
 import { Save, X as XIcon, Clock, Copy, Printer, FileDown, ChevronDown, Sparkles } from "lucide-react";
 import { loadDraft, saveDraft, clearDraft, isNoteContentful, formatRelativeTime, formatClockTime, type DraftNoteData } from "@/lib/draftNote";
 import { todayLocalISO } from "@/lib/localDate";
+import { getPdfPageSlices } from "@/lib/pdfSlices";
 
 import { PatientInfoSection } from "./features/note-form/PatientInfoSection";
 import { ComplaintSection } from "./features/note-form/ComplaintSection";
@@ -19,6 +20,7 @@ import { ClinicalSections } from "./features/note-form/ClinicalSections";
 
 export default function ProgressNoteForm() {
   const selectedNoteId = useNoteStore((s) => s.selectedNoteId);
+  const notes = useNoteStore((s) => s.notes);
   const saveNote = useNoteStore((s) => s.saveNote);
   const selectNote = useNoteStore((s) => s.selectNote);
   const therapist = useAuthStore((s) => s.therapist);
@@ -104,7 +106,9 @@ export default function ProgressNoteForm() {
     const note = useNoteStore.getState().notes.find((n) => n.id === selectedNoteId);
     if (note) {
       const roms = note.rom && note.rom.length > 0 ? note.rom : [{ joint: "", measuredROM: "", normalRange: "" }];
-      reset({ ...note, rom: roms });
+      // EMPTY_NOTE 스프레드 — 구버전 노트에 없는 신규 필드(assessment 등)를
+      // 기본값으로 채워 controlled input 경고를 방지
+      reset({ ...EMPTY_NOTE, ...note, rom: roms });
       setCurrentNoteId(note.id ?? null);
       setSavedTherapist(note.therapist ?? null);
     }
@@ -244,27 +248,34 @@ export default function ProgressNoteForm() {
               backgroundColor: "#ffffff",
             });
 
-            // JPEG 0.85 → PNG 대비 약 1/10 용량 (의무기록 가독성에는 충분)
-            const imgData = canvas.toDataURL("image/jpeg", 0.85);
-
             const pdf = new jsPDF("p", "mm", "a4");
             const pageWidth = pdf.internal.pageSize.getWidth();   // 210mm
             const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
-            // 캔버스를 A4 폭에 맞췄을 때 총 높이 (mm)
-            const imgTotalHeight = (canvas.height * pageWidth) / canvas.width;
 
-            // 한 페이지에 들어갈 만큼만 보이고 나머지는 다음 페이지로
-            let heightLeft = imgTotalHeight;
-            let position = 0;
-            pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgTotalHeight);
-            heightLeft -= pageHeight;
-
-            while (heightLeft > 0) {
-              position -= pageHeight; // 이미지를 위로 스크롤
-              pdf.addPage();
-              pdf.addImage(imgData, "JPEG", 0, position, pageWidth, imgTotalHeight);
-              heightLeft -= pageHeight;
-            }
+            // 페이지 단위로 캔버스를 잘라 넣는다 — 전체 이미지를 페이지마다
+            // 중복 포함하던 기존 방식의 파일 크기 증가 문제 해소
+            const slices = getPdfPageSlices({
+              canvasWidthPx: canvas.width,
+              canvasHeightPx: canvas.height,
+              pageWidthMm: pageWidth,
+              pageHeightMm: pageHeight,
+            });
+            slices.forEach((slice, index) => {
+              if (index > 0) pdf.addPage();
+              const pageCanvas = document.createElement("canvas");
+              pageCanvas.width = canvas.width;
+              pageCanvas.height = slice.sourceHeight;
+              const ctx = pageCanvas.getContext("2d");
+              if (!ctx) throw new Error("PDF 페이지 캔버스를 생성할 수 없습니다.");
+              ctx.drawImage(
+                canvas,
+                0, slice.sourceY, canvas.width, slice.sourceHeight,
+                0, 0, canvas.width, slice.sourceHeight
+              );
+              // JPEG 0.85 → PNG 대비 약 1/10 용량 (의무기록 가독성에는 충분)
+              const imgData = pageCanvas.toDataURL("image/jpeg", 0.85);
+              pdf.addImage(imgData, "JPEG", 0, 0, pageWidth, slice.pageImageHeightMm);
+            });
 
             const { patientName: nameVal, noteDate: dateVal } = methods.getValues();
             const dateStr = dateVal ? dateVal.replace(/-/g, "") : "날짜없음";
@@ -287,6 +298,20 @@ export default function ProgressNoteForm() {
   }, [isGeneratingPdf, methods]);
 
   const displayTherapist = currentNoteId ? savedTherapist : therapist;
+
+  /* 회차 표시 — 같은 환자(patientId)의 노트를 시술일 순으로 세어 몇 번째
+     기록인지 보여준다 (기존 노트 편집 모드에서만) */
+  const sessionInfo = useMemo(() => {
+    if (!currentNoteId) return null;
+    const cur = notes.find((n) => n.id === currentNoteId);
+    if (!cur?.patientId) return null;
+    const timeOf = (n: NoteData) => new Date(n.noteDate || n.savedAt || 0).getTime();
+    const series = notes
+      .filter((n) => n.patientId === cur.patientId)
+      .sort((a, b) => timeOf(a) - timeOf(b) || new Date(a.savedAt || 0).getTime() - new Date(b.savedAt || 0).getTime());
+    const idx = series.findIndex((n) => n.id === currentNoteId);
+    return idx >= 0 ? { seq: idx + 1, total: series.length } : null;
+  }, [notes, currentNoteId]);
 
   return (
     <FormProvider {...methods}>
@@ -400,6 +425,9 @@ export default function ProgressNoteForm() {
                       <span className="hidden sm:inline">기존 노트 수정 중:</span>
                       <span className="sm:hidden">수정 중:</span>
                       <span className="font-bold truncate max-w-[80px] sm:max-w-none">{patientName || "(이름 없음)"}</span>
+                      {sessionInfo && (
+                        <span className="font-bold whitespace-nowrap">· {sessionInfo.seq}회차/{sessionInfo.total}회</span>
+                      )}
                     </span>
                   </div>
                 ) : (
