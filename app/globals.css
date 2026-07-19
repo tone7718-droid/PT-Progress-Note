@@ -30,6 +30,39 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* ── 디자인 토큰 (시안 A · 클리니컬 블루) ──
+   기존 파란 정체성을 유지하되 액센트를 한 단계 깊게 정제하고,
+   과했던 라운드·그림자를 낮춰 "정돈된 임상 도구" 인상으로.
+   컴포넌트의 유틸리티 클래스(bg-blue-600 등)는 그대로 두고
+   토큰 값만 갈아끼우는 방식 — 기능 코드는 건드리지 않는다. */
+@theme {
+  /* 액센트: 채도를 낮춘 딥 블루 */
+  --color-blue-50: #eff4fc;
+  --color-blue-100: #e4ebfb;
+  --color-blue-200: #c9d8f5;
+  --color-blue-300: #9db8ec;
+  --color-blue-400: #6e93e0;
+  --color-blue-500: #3b67d6;
+  --color-blue-600: #1d4ed8;
+  --color-blue-700: #1e40af;
+  --color-blue-800: #1e3a8a;
+  --color-blue-900: #1b3578;
+  --color-blue-950: #16295e;
+
+  /* 바탕에 미세한 블루 틴트 — 순회색보다 화면이 차분해짐 */
+  --color-gray-50: #f6f8fb;
+
+  /* 라운드 절제: rounded-xl/2xl/3xl 남발이 만들던 "풍선" 인상 제거 */
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.65rem;
+  --radius-3xl: 0.8rem;
+
+  /* 그림자 절제: 떠 있는 카드 → 지면에 붙은 카드 */
+  --shadow-lg: 0 4px 12px rgb(15 23 42 / 0.06);
+  --shadow-xl: 0 8px 20px rgb(15 23 42 / 0.07);
+  --shadow-2xl: 0 12px 28px rgb(15 23 42 / 0.08);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
