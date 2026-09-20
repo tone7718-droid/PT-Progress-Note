@@ -32,9 +32,9 @@ beforeEach(() => {
 });
 
 describe("autoBackup", () => {
-  it("does nothing when notes array is empty", async () => {
+  it("preserves an empty state for undo", async () => {
     await snapshotBeforeDestructive("before-delete", []);
-    expect(localStorage.getItem(KEY)).toBeNull();
+    expect((await listBackups())[0].notes).toEqual([]);
   });
 
   it("writes a snapshot before destructive action", async () => {

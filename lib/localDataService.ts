@@ -1,3 +1,5 @@
+import { withDataLock, commitData } from "@/lib/storageLock";
+import { parseExchangeBackup, normalizeExchangeTherapist, reconcilePatients, mergeTherapists, type ImportResult } from "@/lib/backupExchange";
 /**
  * localStorage 기반 데이터 서비스 (현재 운영 중인 단일 데이터 소스)
  *
@@ -16,7 +18,7 @@
  * (이전 클라우드 코드는 git history `14316af` 이전 커밋에서 참조 가능)
  */
 
-import { NoteDataSchema, type NoteData, type TherapistRecord, type Therapist, type PainEntry, type PainLevel, type PainView } from "@/types";
+import { type NoteData, type TherapistRecord, type Therapist, type PainEntry, type PainLevel, type PainView } from "@/types";
 import { ANT_CENTER, ANT_PAIRED, POST_CENTER, POST_PAIRED } from "@/components/bodyDiagramShapes";
 import { hashPassword, verifyPassword, isLegacyHash } from "@/components/hashUtils";
 import {
@@ -37,69 +39,6 @@ const SESSION_KEY = "pt_local_session";
 
 const DEFAULT_MASTER_PW = "0000";
 
-/* ── 임포트 시 문자열 필드 sanitize ── */
-const MAX_FIELD_LENGTH = 20_000;
-
-function sanitizeString(val: unknown): string {
-  if (typeof val !== "string") return "";
-  return val
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    // 따옴표가 뒤따르는 실제 인라인 이벤트 속성(onclick=" 등)만 제거.
-    // 임상 문구("onset = 3일 전", "pronation = 80도")를 훼손하지 않도록 좁게 매칭.
-    .replace(/\bon\w+\s*=\s*["']/gi, "")
-    .slice(0, MAX_FIELD_LENGTH);
-}
-
-/** 구버전/외부 백업의 결측·형식 이탈 필드를 스키마 검증 전에 정규화.
-    (정당한 옛 데이터가 zod 에서 통째로 거부되지 않도록) */
-function normalizeNoteShape(note: NoteData): NoteData {
-  const rawScore = note.painScore as unknown;
-  const score =
-    typeof rawScore === "number" ? rawScore : typeof rawScore === "string" ? Number(rawScore) : null;
-  const rawAfter = note.painScoreAfter as unknown;
-  const afterScore =
-    typeof rawAfter === "number" ? rawAfter : typeof rawAfter === "string" ? Number(rawAfter) : null;
-  return {
-    ...note,
-    painScoreAfter:
-      typeof afterScore === "number" && Number.isFinite(afterScore) && afterScore >= 0 && afterScore <= 10
-        ? afterScore
-        : null,
-    rom: Array.isArray(note.rom)
-      ? note.rom.map((r) => ({
-          joint: typeof r?.joint === "string" ? r.joint : "",
-          measuredROM: typeof r?.measuredROM === "string" ? r.measuredROM : "",
-          normalRange: typeof r?.normalRange === "string" ? r.normalRange : "",
-        }))
-      : [],
-    painScore:
-      typeof score === "number" && Number.isFinite(score) && score >= 0 && score <= 10
-        ? score
-        : null,
-  };
-}
-
-function sanitizeNote(note: NoteData): NoteData {
-  return {
-    ...note,
-    patientName: sanitizeString(note.patientName),
-    chartNo: sanitizeString(note.chartNo),
-    birthDate: sanitizeString(note.birthDate),
-    gender: sanitizeString(note.gender),
-    diagnosis: sanitizeString(note.diagnosis),
-    pmh: sanitizeString(note.pmh),
-    chiefComplaint: sanitizeString(note.chiefComplaint),
-    postural: sanitizeString(note.postural),
-    palpation: sanitizeString(note.palpation),
-    specialTest: sanitizeString(note.specialTest),
-    treatment: sanitizeString(note.treatment),
-    assessment: sanitizeString(note.assessment),
-    homeExercise: sanitizeString(note.homeExercise),
-    plan: sanitizeString(note.plan),
-    noteDate: sanitizeString(note.noteDate),
-  };
-}
-
 /* ══════════════════════════════════════════
    Helpers
    ══════════════════════════════════════════ */
@@ -110,7 +49,7 @@ function read<T>(key: string, fallback: T): T {
     const raw = window.localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
-    return fallback;
+    throw new Error("계정 또는 세션 저장소를 읽을 수 없습니다. 원본을 보존했습니다.");
   }
 }
 
@@ -131,16 +70,6 @@ async function writeNotes(notes: NoteData[]): Promise<void> {
  * readNotes 가 빈 배열을 반환한 뒤 사용자가 노트를 저장하면 NOTES_KEY 가
  * 덮어써지므로, 격리해 두지 않으면 원본이 영구 소실됨 (암호화 키 손상 대비).
  */
-function quarantineCorruptNotes(raw: string): void {
-  try {
-    window.localStorage.setItem(`${NOTES_KEY}_corrupt_${Date.now()}`, raw);
-    console.error(
-      `[localDataService] 노트 복호화 실패 — 원본을 "${NOTES_KEY}_corrupt_*" 키에 보관했습니다.`
-    );
-  } catch {
-    /* 격리 보관 실패 (쿼터 초과 등) — 앱 동작은 계속 */
-  }
-}
 
 /**
  * 환자 노트 복호화 읽기.
@@ -151,25 +80,14 @@ async function readNotes(): Promise<NoteData[]> {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(NOTES_KEY);
   if (!raw) return [];
-  try {
-    const decrypted = await decryptData(raw);
-    return JSON.parse(decrypted) as NoteData[];
-  } catch {
-    // 암호화 전 평문 데이터 폴백 (최초 1회 마이그레이션)
-    try {
-      const plain = JSON.parse(raw);
-      if (Array.isArray(plain)) {
-        await writeNotes(plain as NoteData[]); // 즉시 암호화로 업그레이드
-        return plain as NoteData[];
-      }
-    } catch {
-      /* 아래 격리 처리로 진행 */
-    }
-    quarantineCorruptNotes(raw);
-    return [];
-  }
+  let parsed: unknown;
+  try { parsed = raw.trimStart().startsWith("[") ? JSON.parse(raw) : JSON.parse(await decryptData(raw)); }
+  catch { throw new Error("기록을 읽을 수 없습니다. 원본을 보존하기 위해 저장을 중단했습니다. 암호화 키와 백업을 확인해주세요."); }
+  if (!Array.isArray(parsed)) throw new Error("기록 저장소가 손상되었습니다. 원본을 보존하고 저장을 중단했습니다.");
+  const checked = parseExchangeBackup({ notes: parsed.map(sanitizePainAreas) });
+  if (checked.skippedCount || checked.duplicateCount) throw new Error("기록 저장소에 잘못된 항목 또는 중복 ID가 있습니다. 원본을 보존하고 복구가 필요합니다.");
+  return checked.notes;
 }
-
 async function ensureBootstrapMaster(): Promise<void> {
   // 항상 실제 localStorage 를 확인. (모듈 캐시 사용 X — 외부에서
   // localStorage 가 비워지는 경우에도 안전하게 마스터 재생성)
@@ -192,7 +110,7 @@ async function ensureBootstrapMaster(): Promise<void> {
    Auth
    ══════════════════════════════════════════ */
 
-export async function signIn(
+async function signInUnlocked(
   loginId: string,
   password: string
 ): Promise<{ therapist: Therapist }> {
@@ -225,7 +143,7 @@ export async function signIn(
   return { therapist: session };
 }
 
-export async function signOut(): Promise<void> {
+async function signOutUnlocked(): Promise<void> {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(SESSION_KEY);
 }
@@ -236,10 +154,10 @@ export function onAuthStateChange(
   callback: (therapist: Therapist | null) => void
 ): { data: { subscription: AuthSubscription } } {
   // 페이지 로드 시 저장된 세션 복원
-  void ensureBootstrapMaster().then(() => {
+  void withDataLock(ensureBootstrapMaster).then(() => {
     const session = read<Therapist | null>(SESSION_KEY, null);
     callback(session);
-  });
+  }).catch(() => callback(null));
 
   return {
     data: {
@@ -248,7 +166,7 @@ export function onAuthStateChange(
   };
 }
 
-export async function reauthenticate(
+async function reauthenticateUnlocked(
   loginId: string,
   password: string
 ): Promise<boolean> {
@@ -414,16 +332,19 @@ function sanitizePainAreas(note: NoteData): NoteData {
   return { ...note, painAreas: [] };
 }
 
-export async function fetchNotes(): Promise<NoteData[]> {
+async function fetchNotesUnlocked(): Promise<NoteData[]> {
   const notes = await ensurePatientIds(await readNotes());
   return notes
     .map(sanitizePainAreas)
     .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
 }
 
-export async function upsertNote(note: NoteData): Promise<NoteData> {
+async function upsertNoteUnlocked(note: NoteData, expectedSavedAt?: string): Promise<NoteData> {
   const session = read<Therapist | null>(SESSION_KEY, null);
   const notes = await ensurePatientIds(await readNotes());
+  if (expectedSavedAt !== undefined && notes.find(n => n.id === note.id)?.savedAt !== expectedSavedAt) {
+    throw new Error("다른 창에서 이 기록이 변경되거나 삭제되었습니다. 현재 입력 내용을 복사해 보관한 뒤 기록을 다시 열어주세요.");
+  }
   const enriched: NoteData = {
     ...note,
     // 같은 id 의 기존 노트가 있으면 그 patientId 를 재사용 — 차트번호·생년월일이
@@ -448,13 +369,13 @@ export async function upsertNote(note: NoteData): Promise<NoteData> {
   return enriched;
 }
 
-export async function deleteNotes(ids: string[]): Promise<void> {
+async function deleteNotesUnlocked(ids: string[]): Promise<void> {
   const notes = await readNotes();
   await snapshotBeforeDestructive("before-delete", notes);
   await writeNotes(notes.filter((n) => !ids.includes(n.id)));
 }
 
-export async function transferNotesRpc(
+async function transferNotesRpcUnlocked(
   fromUid: string,
   toUid: string,
   toName: string,
@@ -467,6 +388,7 @@ export async function transferNotesRpc(
       count++;
       return {
         ...n,
+        savedAt: new Date(Math.max(Date.now(), (Date.parse(n.savedAt ?? "") || 0) + 1)).toISOString(),
         therapistUid: toUid,
         therapist: {
           uid: toUid,
@@ -478,7 +400,10 @@ export async function transferNotesRpc(
     }
     return n;
   });
-  await writeNotes(updated);
+  if (count) {
+    await snapshotBeforeDestructive("before-edit", notes);
+    await writeNotes(updated);
+  }
   return count;
 }
 
@@ -486,12 +411,12 @@ export async function transferNotesRpc(
    Therapists CRUD
    ══════════════════════════════════════════ */
 
-export async function fetchTherapists(): Promise<TherapistRecord[]> {
+async function fetchTherapistsUnlocked(): Promise<TherapistRecord[]> {
   await ensureBootstrapMaster();
   return read<TherapistRecord[]>(THERAPISTS_KEY, []);
 }
 
-export async function createTherapist(
+async function createTherapistUnlocked(
   loginId: string,
   name: string,
   password: string
@@ -523,7 +448,7 @@ export async function createTherapist(
   return newRecord;
 }
 
-export async function resignTherapistDb(uid: string): Promise<void> {
+async function resignTherapistDbUnlocked(uid: string): Promise<void> {
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
   write(
     THERAPISTS_KEY,
@@ -536,7 +461,7 @@ export async function resignTherapistDb(uid: string): Promise<void> {
  * 이미 작성된 노트의 therapist 스냅샷은 그대로 유지되어 표시에 영향 없음.
  * 마스터 계정은 삭제 불가 (방어 로직).
  */
-export async function deleteTherapistDb(uid: string): Promise<void> {
+async function deleteTherapistDbUnlocked(uid: string): Promise<void> {
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
   const target = therapists.find((t) => t.uid === uid);
   if (!target) throw new Error("해당 치료사를 찾을 수 없습니다.");
@@ -549,7 +474,7 @@ export async function deleteTherapistDb(uid: string): Promise<void> {
  * master 가 다른 치료사의 비밀번호를 재설정.
  * v3 백업에서 복원된 "비밀번호 미설정(로그인 잠금)" 계정을 활성화하는 유일한 경로.
  */
-export async function resetTherapistPasswordDb(
+async function resetTherapistPasswordDbUnlocked(
   uid: string,
   newPassword: string
 ): Promise<void> {
@@ -573,7 +498,7 @@ export async function resetTherapistPasswordDb(
   );
 }
 
-export async function updateTherapistPasswordViaAuth(
+async function updateTherapistPasswordViaAuthUnlocked(
   newPassword: string
 ): Promise<void> {
   const session = read<Therapist | null>(SESSION_KEY, null);
@@ -601,14 +526,14 @@ export async function updateTherapistPasswordViaAuth(
  * 해시 없이 복원된 치료사 계정은 로그인 불가 상태이며, master 가
  * "비밀번호 재설정"으로 활성화해야 한다 (v3 부터).
  */
-export async function exportAllData(): Promise<string> {
+async function exportAllDataUnlocked(): Promise<string> {
   const notes = await readNotes(); // 복호화된 평문
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []).map((t) => ({
     ...t,
     passwordHash: "",
   }));
   return JSON.stringify(
-    { version: 3, exportedAt: new Date().toISOString(), notes, therapists },
+    { app: "PT-NOTE", reason: "manual", version: 3, exportedAt: new Date().toISOString(), notes, therapists },
     null,
     2
   );
@@ -625,8 +550,8 @@ interface EncryptedBackupEnvelope extends PassphraseEncrypted {
 }
 
 /** 내보내기(암호화): 백업 페이로드 전체를 passphrase 파생 키로 AES-GCM 암호화 */
-export async function exportAllDataEncrypted(passphrase: string): Promise<string> {
-  const plain = await exportAllData();
+async function exportAllDataEncryptedUnlocked(passphrase: string): Promise<string> {
+  const plain = await exportAllDataUnlocked();
   const encrypted = await encryptWithPassphrase(plain, passphrase);
   const envelope: EncryptedBackupEnvelope = {
     app: "pt-progress-note",
@@ -665,55 +590,18 @@ export interface ImportNotesResult {
   skippedInvalid: number; // 스키마 검증 실패로 제외된 건수 (조용히 버리지 않고 보고)
 }
 
-export async function importNotes(notes: NoteData[]): Promise<ImportNotesResult> {
-  if (!Array.isArray(notes) || notes.length === 0) return { added: 0, skippedInvalid: 0 };
+async function importNotesUnlocked(notes: NoteData[]): Promise<ImportNotesResult> {
+  const parsed = parseExchangeBackup({ notes });
   const existing = await readNotes();
-  await snapshotBeforeDestructive("before-import", existing);
-  const existingIds = new Set(existing.map((n) => n.id));
-
-  let skippedInvalid = 0;
-  const newOnes: NoteData[] = [];
-  for (const raw of notes) {
-    if (!raw || typeof raw !== "object") { skippedInvalid++; continue; }
-    // 구버전 painAreas/rom/painScore 형식을 먼저 정규화한 뒤 스키마 검증
-    const normalized = sanitizeNote(normalizeNoteShape(sanitizePainAreas(raw as NoteData)));
-    const parsed = NoteDataSchema.safeParse(normalized);
-    if (!parsed.success) { skippedInvalid++; continue; }
-    if (existingIds.has(normalized.id)) continue; // 중복은 오류가 아님 — 조용히 스킵
-    newOnes.push(normalized);
-  }
-
-  if (newOnes.length === 0) return { added: 0, skippedInvalid };
-
-  // 기기 간 patientId 재조정 — 백업의 patientId 는 다른 기기에서 발급된
-  // 값일 수 있으므로, 이 기기의 동일 환자(차트번호/이름+생년월일 매칭)가
-  // 있으면 그 patientId 로 재매핑한다. 같은 수입 patientId 를 공유하던
-  // 노트들은 재매핑 후에도 같은 그룹을 유지한다.
-  const pidRemap = new Map<string, string>();
-  for (const n of newOnes) {
-    if (!n.patientId) continue;
-    if (!pidRemap.has(n.patientId)) {
-      const local = findMatchingPatientId(n, existing);
-      pidRemap.set(n.patientId, local ?? n.patientId);
-    }
-    n.patientId = pidRemap.get(n.patientId);
-  }
-
-  // patientId 가 없는 노트에는 기존+가져오는 노트 전체를 기준으로 부여
-  const pool = [...existing, ...newOnes];
-  for (const n of newOnes) {
-    if (!n.patientId) {
-      n.patientId = resolvePatientId(n, pool, { allowNameOnly: true });
-    }
-  }
-
-  await writeNotes([...newOnes, ...existing]);
-  return { added: newOnes.length, skippedInvalid };
+  const ids = new Set(existing.map(n => n.id));
+  const newOnes = parsed.notes.filter(n => !ids.has(n.id));
+  reconcilePatients(newOnes, existing);
+  if (newOnes.length) { await snapshotBeforeDestructive("before-import", existing); await writeNotes([...newOnes, ...existing]); }
+  return { added: newOnes.length, skippedInvalid: parsed.skippedCount };
 }
-
 /* ── 자동 백업 복원 ── */
 
-export async function listAutoBackups(): Promise<BackupSnapshot[]> {
+async function listAutoBackupsUnlocked(): Promise<BackupSnapshot[]> {
   return listBackups();
 }
 
@@ -721,15 +609,17 @@ export async function listAutoBackups(): Promise<BackupSnapshot[]> {
  * 자동 백업 스냅샷으로 전체 복원 (현재 노트를 스냅샷 내용으로 교체).
  * 복원 직전 현재 상태를 추가 스냅샷으로 남겨 복원 자체도 되돌릴 수 있게 한다.
  */
-export async function restoreAutoBackup(at: string): Promise<number> {
+async function restoreAutoBackupUnlocked(at: string): Promise<number> {
   const snapshots = await listBackups();
   const target = snapshots.find((s) => s.at === at);
   if (!target) throw new Error("해당 백업을 찾을 수 없습니다.");
 
   const current = await readNotes();
   await snapshotBeforeDestructive("before-restore", current);
-  await writeNotes(target.notes);
-  return target.notes.length;
+  const checked = parseExchangeBackup({ notes: target.notes });
+  if (checked.skippedCount || checked.duplicateCount) throw new Error("백업 기록이 손상되어 복원을 중단했습니다.");
+  await writeNotes(checked.notes);
+  return checked.notes.length;
 }
 
 /**
@@ -742,38 +632,55 @@ export async function restoreAutoBackup(at: string): Promise<number> {
  *   빈 해시를 항상 거부)
  * - v2 이하 구버전 백업의 해시는 그대로 복원 (하위 호환 — 기존 비밀번호 유지)
  */
-export async function importTherapists(records: TherapistRecord[]): Promise<number> {
-  if (!Array.isArray(records) || records.length === 0) return 0;
+async function importTherapistsUnlocked(records: unknown[]): Promise<number> {
   await ensureBootstrapMaster();
+  if (!Array.isArray(records)) throw new Error("치료사 백업 형식 오류");
+  const valid = records.flatMap(r => { try { return [normalizeExchangeTherapist(r)]; } catch { return []; } });
   const existing = read<TherapistRecord[]>(THERAPISTS_KEY, []);
-  const existingUids = new Set(existing.map((t) => t.uid));
-  const activeIds = new Set(
-    existing.filter((t) => !t.resigned && t.id).map((t) => t.id as string)
-  );
-
-  const newOnes: TherapistRecord[] = records
-    .filter(
-      (r) =>
-        !!r &&
-        typeof r === "object" &&
-        typeof r.uid === "string" &&
-        r.uid.length > 0 &&
-        typeof r.name === "string" &&
-        typeof r.passwordHash === "string" &&
-        r.role === "therapist" &&
-        !existingUids.has(r.uid) &&
-        !(typeof r.id === "string" && activeIds.has(r.id))
-    )
-    .map((r) => ({
-      uid: r.uid,
-      id: typeof r.id === "string" ? r.id : null,
-      name: r.name,
-      passwordHash: r.passwordHash,
-      role: "therapist" as const,
-      resigned: r.resigned === true,
-    }));
-
-  if (newOnes.length === 0) return 0;
-  write(THERAPISTS_KEY, [...existing, ...newOnes]);
-  return newOnes.length;
+  const { added } = mergeTherapists(valid, existing);
+  if (added.length) write(THERAPISTS_KEY, [...existing, ...added]);
+  return added.length;
 }
+/** A single atomic, validated import path for plain, encrypted and legacy backups. */
+async function importCompatibleBackupUnlocked(json: string, passphrase?: string): Promise<ImportResult> {
+  const plain = isEncryptedBackup(json) ? await decryptBackupText(json, passphrase ?? "") : json;
+  const parsed = parseExchangeBackup(JSON.parse(plain));
+  const existing = await readNotes();
+  await ensureBootstrapMaster();
+  const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  const ids = new Set(existing.map(n => n.id));
+  const incoming = parsed.notes.filter(n => !ids.has(n.id));
+  reconcilePatients(incoming, existing);
+  const accounts = mergeTherapists(parsed.therapists, therapists);
+  if (incoming.length || accounts.added.length) {
+    await snapshotBeforeDestructive("before-import", existing);
+    const values: Record<string, string> = {};
+    if (incoming.length) values[NOTES_KEY] = await encryptData(JSON.stringify([...incoming, ...existing]));
+    if (accounts.added.length) values[THERAPISTS_KEY] = JSON.stringify([...therapists, ...accounts.added]);
+    commitData(values);
+  }
+  return { notesCount: incoming.length, therapistsCount: accounts.added.length, skippedCount: parsed.skippedCount,
+    duplicateCount: parsed.duplicateCount + parsed.notes.length - incoming.length + accounts.duplicates };
+}
+
+// Hold the origin-wide lock throughout every complete data operation.
+export const signIn = (...args: Parameters<typeof signInUnlocked>): ReturnType<typeof signInUnlocked> => withDataLock(() => signInUnlocked(...args));
+export const signOut = (...args: Parameters<typeof signOutUnlocked>): ReturnType<typeof signOutUnlocked> => withDataLock(() => signOutUnlocked(...args));
+export const reauthenticate = (...args: Parameters<typeof reauthenticateUnlocked>): ReturnType<typeof reauthenticateUnlocked> => withDataLock(() => reauthenticateUnlocked(...args));
+export const fetchNotes = (...args: Parameters<typeof fetchNotesUnlocked>): ReturnType<typeof fetchNotesUnlocked> => withDataLock(() => fetchNotesUnlocked(...args));
+export const upsertNote = (...args: Parameters<typeof upsertNoteUnlocked>): ReturnType<typeof upsertNoteUnlocked> => withDataLock(() => upsertNoteUnlocked(...args));
+export const deleteNotes = (...args: Parameters<typeof deleteNotesUnlocked>): ReturnType<typeof deleteNotesUnlocked> => withDataLock(() => deleteNotesUnlocked(...args));
+export const transferNotesRpc = (...args: Parameters<typeof transferNotesRpcUnlocked>): ReturnType<typeof transferNotesRpcUnlocked> => withDataLock(() => transferNotesRpcUnlocked(...args));
+export const fetchTherapists = (...args: Parameters<typeof fetchTherapistsUnlocked>): ReturnType<typeof fetchTherapistsUnlocked> => withDataLock(() => fetchTherapistsUnlocked(...args));
+export const createTherapist = (...args: Parameters<typeof createTherapistUnlocked>): ReturnType<typeof createTherapistUnlocked> => withDataLock(() => createTherapistUnlocked(...args));
+export const resignTherapistDb = (...args: Parameters<typeof resignTherapistDbUnlocked>): ReturnType<typeof resignTherapistDbUnlocked> => withDataLock(() => resignTherapistDbUnlocked(...args));
+export const deleteTherapistDb = (...args: Parameters<typeof deleteTherapistDbUnlocked>): ReturnType<typeof deleteTherapistDbUnlocked> => withDataLock(() => deleteTherapistDbUnlocked(...args));
+export const resetTherapistPasswordDb = (...args: Parameters<typeof resetTherapistPasswordDbUnlocked>): ReturnType<typeof resetTherapistPasswordDbUnlocked> => withDataLock(() => resetTherapistPasswordDbUnlocked(...args));
+export const updateTherapistPasswordViaAuth = (...args: Parameters<typeof updateTherapistPasswordViaAuthUnlocked>): ReturnType<typeof updateTherapistPasswordViaAuthUnlocked> => withDataLock(() => updateTherapistPasswordViaAuthUnlocked(...args));
+export const exportAllData = (...args: Parameters<typeof exportAllDataUnlocked>): ReturnType<typeof exportAllDataUnlocked> => withDataLock(() => exportAllDataUnlocked(...args));
+export const exportAllDataEncrypted = (...args: Parameters<typeof exportAllDataEncryptedUnlocked>): ReturnType<typeof exportAllDataEncryptedUnlocked> => withDataLock(() => exportAllDataEncryptedUnlocked(...args));
+export const importNotes = (...args: Parameters<typeof importNotesUnlocked>): ReturnType<typeof importNotesUnlocked> => withDataLock(() => importNotesUnlocked(...args));
+export const listAutoBackups = (...args: Parameters<typeof listAutoBackupsUnlocked>): ReturnType<typeof listAutoBackupsUnlocked> => withDataLock(() => listAutoBackupsUnlocked(...args));
+export const restoreAutoBackup = (...args: Parameters<typeof restoreAutoBackupUnlocked>): ReturnType<typeof restoreAutoBackupUnlocked> => withDataLock(() => restoreAutoBackupUnlocked(...args));
+export const importTherapists = (...args: Parameters<typeof importTherapistsUnlocked>): ReturnType<typeof importTherapistsUnlocked> => withDataLock(() => importTherapistsUnlocked(...args));
+export const importCompatibleBackup = (...args: Parameters<typeof importCompatibleBackupUnlocked>): ReturnType<typeof importCompatibleBackupUnlocked> => withDataLock(() => importCompatibleBackupUnlocked(...args));

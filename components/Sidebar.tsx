@@ -1,4 +1,5 @@
 "use client";
+import { describeImport, type ImportResult } from "@/lib/backupExchange";
 
 import { useState, useRef, useEffect } from "react";
 import { useNoteStore } from "@/store/useNoteStore";
@@ -154,11 +155,7 @@ export default function Sidebar() {
     }
   };
 
-  const showImportResult = (result: { notesCount: number; therapistsCount: number; skippedCount: number }) => {
-    const therapistMsg = result.therapistsCount > 0 ? `, 치료사 ${result.therapistsCount}명` : "";
-    const skippedMsg = result.skippedCount > 0 ? `\n(형식 오류로 노트 ${result.skippedCount}건은 제외됨)` : "";
-    alert(`가져오기 완료: 노트 ${result.notesCount}건${therapistMsg} 추가됨${skippedMsg}`);
-  };
+  const showImportResult = (result: ImportResult) => alert(describeImport(result));
 
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

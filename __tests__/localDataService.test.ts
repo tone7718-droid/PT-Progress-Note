@@ -193,24 +193,12 @@ describe("localDataService — painAreas migration", () => {
 });
 
 describe("localDataService — corrupt data safety", () => {
-  it("quarantines undecryptable data instead of silently losing it on next save", async () => {
-    // 암호화 키와 안 맞는 손상 데이터 (복호화 실패 + JSON 파싱 실패)
-    window.localStorage.setItem("pt_local_notes", "corrupted-not-json{{{");
-
-    const notes = await ds.fetchNotes();
-    expect(notes).toEqual([]);
-
-    // 원본이 격리 키에 보관되었는지
-    const quarantineKeys = Object.keys(window.localStorage).filter((k) =>
-      k.startsWith("pt_local_notes_corrupt_")
-    );
-    expect(quarantineKeys).toHaveLength(1);
-    expect(window.localStorage.getItem(quarantineKeys[0])).toBe("corrupted-not-json{{{");
-
-    // 이후 새 노트를 저장해도 격리본은 그대로 유지됨
-    await ds.upsertNote(sampleNote({ id: "new-1" }));
-    expect(window.localStorage.getItem(quarantineKeys[0])).toBe("corrupted-not-json{{{");
-    expect(await ds.fetchNotes()).toHaveLength(1);
+  it("preserves corrupt original data and blocks further saves", async () => {
+    const raw = "corrupted-not-json{{{";
+    window.localStorage.setItem("pt_local_notes", raw);
+    await expect(ds.fetchNotes()).rejects.toThrow();
+    await expect(ds.upsertNote(sampleNote({ id: "new-1" }))).rejects.toThrow();
+    expect(window.localStorage.getItem("pt_local_notes")).toBe(raw);
   });
 
   it("migrates legacy plaintext notes to encrypted storage", async () => {

@@ -21,6 +21,8 @@ import { ClinicalSections } from "./features/note-form/ClinicalSections";
 export default function ProgressNoteForm() {
   const selectedNoteId = useNoteStore((s) => s.selectedNoteId);
   const notes = useNoteStore((s) => s.notes);
+  const storageError = useNoteStore((s) => s.error);
+  const [saveError, setSaveError] = useState("");
   const saveNote = useNoteStore((s) => s.saveNote);
   const selectNote = useNoteStore((s) => s.selectNote);
   const therapist = useAuthStore((s) => s.therapist);
@@ -125,11 +127,12 @@ export default function ProgressNoteForm() {
       const serialized = JSON.stringify(data);
       if (serialized === lastDraftJsonRef.current) return; // 변경 없음 — 스킵
       void saveDraft(data).then(() => {
+        setSaveError("");
         lastDraftJsonRef.current = serialized;
         setLastDraftAt(new Date().toISOString());
         setAutoSaveFlash(true);
         window.setTimeout(() => setAutoSaveFlash(false), 1200);
-      });
+      }).catch((err: Error) => setSaveError(err.message || "임시 저장에 실패했습니다."));
     }, 5000);
     return () => window.clearInterval(interval);
   }, [currentNoteId, methods]);
@@ -144,7 +147,7 @@ export default function ProgressNoteForm() {
   };
 
   const discardDraft = () => {
-    clearDraft();
+    void clearDraft().catch((err: Error) => setSaveError(err.message));
     setPendingDraft(null);
   };
 
@@ -196,15 +199,17 @@ export default function ProgressNoteForm() {
       // 저장 시 부여된 patientId 를 폼에 되써준다 — 차트번호·생년월일이 없는
       // 노트가 재저장마다 새 환자로 갈라지는 것(churn) 방지
       methods.setValue("patientId", saved.patientId);
+      methods.setValue("savedAt", saved.savedAt);
       setShowSaved(true);
       // 정상 저장 → 임시 저장 정리
-      clearDraft();
+      await clearDraft();
       setPendingDraft(null);
       setLastDraftAt(null);
       setTimeout(() => setShowSaved(false), 3000);
     } catch (err) {
       console.error("저장 실패:", err);
-      alert("저장에 실패했습니다. 다시 시도해주세요.");
+      setSaveError((err as Error).message || "저장에 실패했습니다.");
+      alert((err as Error).message || "저장에 실패했습니다.");
     } finally {
       setIsSaving(false);
     }
@@ -316,6 +321,7 @@ export default function ProgressNoteForm() {
   return (
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSaveSubmit, onInvalid)}>
+        {(saveError || storageError) && <p role="alert" className="p-3 text-sm font-bold text-red-600">{saveError || storageError}</p>}
         <div 
           className={isGeneratingPdf
             ? "bg-white p-0 m-0 text-black w-[800px] overflow-hidden"

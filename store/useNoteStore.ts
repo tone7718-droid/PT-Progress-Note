@@ -1,3 +1,4 @@
+import type { ImportResult } from "@/lib/backupExchange";
 import { create } from "zustand";
 import type { NoteData } from "@/types";
 import * as ds from "@/lib/localDataService"; // 로컬 전환용
@@ -19,14 +20,13 @@ interface NoteStore {
   transferNotes: (fromUid: string, toUid: string, toName: string, toLoginId: string | null) => Promise<void>;
   exportData: () => Promise<string>;
   exportDataEncrypted: (passphrase: string) => Promise<string>;
-  importData: (
-    json: string,
-    passphrase?: string
-  ) => Promise<{ notesCount: number; therapistsCount: number; skippedCount: number }>;
+  importData: (json: string, passphrase?: string) => Promise<ImportResult>;
   listBackups: () => Promise<BackupSnapshot[]>;
   restoreBackup: (at: string) => Promise<number>;
   initSync: () => void;
 }
+
+let storageListenerInstalled = false;
 
 export const useNoteStore = create<NoteStore>((set, get) => ({
   notes: [],
@@ -38,6 +38,14 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   createNewNote: () => set({ selectedNoteId: null }),
 
   initSync: () => {
+    if (!storageListenerInstalled && typeof window !== "undefined") {
+      storageListenerInstalled = true;
+      window.addEventListener("storage", (event) => {
+        if ((event.key === "pt_local_notes" || event.key === null) && useAuthStore.getState().therapist) {
+          void get().refreshNotes();
+        }
+      });
+    }
     // Auth 상태 리스너 등록 (cleanup은 앱 생명주기 동안 유지하므로 subscription 미보관)
     ds.onAuthStateChange(async (t) => {
       useAuthStore.getState().setTherapist(t);
@@ -70,14 +78,17 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   refreshNotes: async () => {
     try {
       const fetchedNotes = await ds.fetchNotes();
-      set({ notes: fetchedNotes });
+      set({ notes: fetchedNotes, error: null });
     } catch (err) {
       set({ error: (err as Error).message });
     }
   },
 
   saveNote: async (data, existingId) => {
-    const now = new Date().toISOString();
+    const expectedSavedAt = existingId
+      ? (data as Partial<NoteData>).savedAt ?? get().notes.find((note) => note.id === existingId)?.savedAt
+      : undefined;
+    const now = new Date(Math.max(Date.now(), (Date.parse(expectedSavedAt ?? "") || 0) + 1)).toISOString();
     const noteToSave: NoteData = existingId
       ? { ...data, id: existingId, savedAt: now }
       : { ...data, id: `note-${genId()}`, savedAt: now };
@@ -94,12 +105,13 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     });
 
     try {
-      const saved = await ds.upsertNote(noteToSave);
+      const saved = await ds.upsertNote(noteToSave, expectedSavedAt);
       set((state) => ({
         notes: state.notes
           .map((n) => (n.id === saved.id ? saved : n))
           .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
       }));
+      await get().refreshNotes();
       return saved;
     } catch (err) {
       // rollback
@@ -125,18 +137,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
 
   transferNotes: async (fromUid, toUid, toName, toLoginId) => {
     await ds.transferNotesRpc(fromUid, toUid, toName, toLoginId);
-    set((state) => ({
-      notes: state.notes.map((n) => {
-        if (n.therapistUid === fromUid) {
-          return {
-            ...n,
-            therapistUid: toUid,
-            therapist: { uid: toUid, id: toLoginId, name: toName, role: "therapist" as const },
-          };
-        }
-        return n;
-      })
-    }));
+    await get().refreshNotes();
   },
 
   exportData: async () => {
@@ -148,27 +149,11 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   importData: async (json, passphrase) => {
-    // 암호화 백업이면 먼저 passphrase 로 복호화해 평문 백업 JSON 을 얻는다
-    const plainJson = ds.isEncryptedBackup(json)
-      ? await ds.decryptBackupText(json, passphrase ?? "")
-      : json;
-
-    const data = JSON.parse(plainJson);
-    if (!data.notes || !Array.isArray(data.notes)) throw new Error("잘못된 데이터 형식입니다.");
-
-    // import 직전 스냅샷은 ds.importNotes 내부에서 1회 수행 (중복 방지)
-    const { added: notesCount, skippedInvalid: skippedCount } = await ds.importNotes(data.notes);
-    const therapistsCount = Array.isArray(data.therapists)
-      ? await ds.importTherapists(data.therapists)
-      : 0;
-
-    const updatedNotes = await ds.fetchNotes();
-    set({ notes: updatedNotes });
-    if (therapistsCount > 0) {
-      useAuthStore.getState().setTherapists(await ds.fetchTherapists());
-    }
-
-    return { notesCount, therapistsCount, skippedCount };
+    const result = await ds.importCompatibleBackup(json, passphrase);
+    const [notes, therapists] = await Promise.all([ds.fetchNotes(), ds.fetchTherapists()]);
+    set({ notes, error: null });
+    useAuthStore.getState().setTherapists(therapists);
+    return result;
   },
 
   listBackups: async () => {
