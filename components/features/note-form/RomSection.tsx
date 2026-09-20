@@ -1,4 +1,5 @@
 "use client";
+import { RomDetails } from "@/components/RomDetails";
 
 import React, { useState, useRef, useEffect } from "react";
 import { useFormContext, useFieldArray, Controller } from "react-hook-form";
@@ -80,7 +81,7 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
     control,
     name: "rom",
   });
-  
+
   // 감시용
   const romValues = watch("rom");
 
@@ -231,10 +232,10 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
                       render={({ field: inputProps }) => (
                         <Input
                           {...inputProps}
-                          type="number"
+                          type="text"
                           isPdfMode={isGeneratingPdf}
-                          min={0}
-                          max={360}
+
+
                           className={cn(
                             "pr-6 sm:pr-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-center font-bold !text-base sm:!text-xl",
                             isSelected && !isGeneratingPdf ? "text-blue-700 dark:text-blue-200 bg-white dark:bg-slate-800 ring-2 ring-blue-100 dark:ring-blue-800 placeholder-blue-200" : !isGeneratingPdf ? "bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-gray-500 placeholder-gray-300" : ""
@@ -266,6 +267,7 @@ export function RomSection({ isGeneratingPdf }: { isGeneratingPdf: boolean }) {
                     </svg>
                   </button>
                 )}
+                <RomDetails index={index} isPdf={isGeneratingPdf} />
               </div>
             );
           })}

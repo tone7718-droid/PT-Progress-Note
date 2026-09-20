@@ -1,3 +1,5 @@
+import { currentActor, openSession, closeSession, requireMaster, requireNoteAccess, canAccessNote, hospitalId } from "@/lib/accessControl";
+import { prepareNotesWrite, includeImportedHistory, readHistory, setHistoryOperation } from "@/lib/recordHistory";
 import { withDataLock, commitData } from "@/lib/storageLock";
 import { parseExchangeBackup, normalizeExchangeTherapist, reconcilePatients, mergeTherapists, type ImportResult } from "@/lib/backupExchange";
 /**
@@ -22,7 +24,6 @@ import { type NoteData, type TherapistRecord, type Therapist, type PainEntry, ty
 import { ANT_CENTER, ANT_PAIRED, POST_CENTER, POST_PAIRED } from "@/components/bodyDiagramShapes";
 import { hashPassword, verifyPassword, isLegacyHash } from "@/components/hashUtils";
 import {
-  encryptData,
   decryptData,
   encryptWithPassphrase,
   decryptWithPassphrase,
@@ -35,9 +36,8 @@ import { validateNewPassword } from "@/lib/passwordPolicy";
 /* ── Storage Keys ── */
 const NOTES_KEY = "pt_local_notes";
 const THERAPISTS_KEY = "pt_local_therapists";
-const SESSION_KEY = "pt_local_session";
 
-const DEFAULT_MASTER_PW = "0000";
+
 
 /* ══════════════════════════════════════════
    Helpers
@@ -61,8 +61,7 @@ function write<T>(key: string, value: T) {
 /** 환자 노트를 AES-GCM 암호화해서 저장 */
 async function writeNotes(notes: NoteData[]): Promise<void> {
   if (typeof window === "undefined") return;
-  const encrypted = await encryptData(JSON.stringify(notes));
-  window.localStorage.setItem(NOTES_KEY, encrypted);
+  commitData(await prepareNotesWrite(notes));
 }
 
 /**
@@ -89,22 +88,20 @@ async function readNotes(): Promise<NoteData[]> {
   return checked.notes;
 }
 async function ensureBootstrapMaster(): Promise<void> {
-  // 항상 실제 localStorage 를 확인. (모듈 캐시 사용 X — 외부에서
-  // localStorage 가 비워지는 경우에도 안전하게 마스터 재생성)
-  const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
-  if (therapists.length > 0) return;
-
-  const masterPwHash = await hashPassword(DEFAULT_MASTER_PW);
-  const master: TherapistRecord = {
-    uid: "master-default",
-    id: "master",
-    name: "마스터",
-    passwordHash: masterPwHash,
-    role: "master",
-    resigned: false,
-  };
-  write(THERAPISTS_KEY, [master]);
+  const records = read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  if (!Array.isArray(records)) throw new Error("계정 저장소가 손상되었습니다.");
 }
+async function isSetupRequiredUnlocked(): Promise<boolean> {
+  await ensureBootstrapMaster();
+  return read<TherapistRecord[]>(THERAPISTS_KEY, []).length === 0;
+}
+async function setupInitialMasterUnlocked(name: string, password: string): Promise<void> {
+  if (!await isSetupRequiredUnlocked()) throw new Error("이미 관리자 계정이 설정되어 있습니다.");
+  if (!name.trim() || password.length < 8) throw new Error("관리자 이름과 8자 이상의 비밀번호를 입력해주세요.");
+  hospitalId();
+  write(THERAPISTS_KEY, [{ uid: "master-default", id: "master", name: name.trim(), role: "master", resigned: false, passwordHash: await hashPassword(password) }]);
+}
+
 
 /* ══════════════════════════════════════════
    Auth
@@ -139,13 +136,13 @@ async function signInUnlocked(
     name: found.name,
     role: found.role,
   };
-  write(SESSION_KEY, session);
+  openSession(session);
   return { therapist: session };
 }
 
 async function signOutUnlocked(): Promise<void> {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(SESSION_KEY);
+  closeSession();
 }
 
 type AuthSubscription = { unsubscribe: () => void };
@@ -155,7 +152,7 @@ export function onAuthStateChange(
 ): { data: { subscription: AuthSubscription } } {
   // 페이지 로드 시 저장된 세션 복원
   void withDataLock(ensureBootstrapMaster).then(() => {
-    const session = read<Therapist | null>(SESSION_KEY, null);
+    const session = currentActor();
     callback(session);
   }).catch(() => callback(null));
 
@@ -335,26 +332,31 @@ function sanitizePainAreas(note: NoteData): NoteData {
 async function fetchNotesUnlocked(): Promise<NoteData[]> {
   const notes = await ensurePatientIds(await readNotes());
   return notes
+    .filter(n => canAccessNote(n, currentActor()))
     .map(sanitizePainAreas)
     .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
 }
 
 async function upsertNoteUnlocked(note: NoteData, expectedSavedAt?: string): Promise<NoteData> {
-  const session = read<Therapist | null>(SESSION_KEY, null);
+  const session = currentActor();
   const notes = await ensurePatientIds(await readNotes());
+  const existingRecord = notes.find(n => n.id === note.id);
+  if (existingRecord) requireNoteAccess(existingRecord, session);
+  else if (session.role !== "master" && note.therapistUid && note.therapistUid !== session.uid) throw new Error("다른 치료사의 기록을 만들 수 없습니다.");
   if (expectedSavedAt !== undefined && notes.find(n => n.id === note.id)?.savedAt !== expectedSavedAt) {
     throw new Error("다른 창에서 이 기록이 변경되거나 삭제되었습니다. 현재 입력 내용을 복사해 보관한 뒤 기록을 다시 열어주세요.");
   }
   const enriched: NoteData = {
     ...note,
+    savedAt: new Date(Math.max(Date.now(), (Date.parse(existingRecord?.savedAt ?? "") || 0) + 1)).toISOString(),
     // 같은 id 의 기존 노트가 있으면 그 patientId 를 재사용 — 차트번호·생년월일이
     // 비어 있는 노트를 재저장할 때마다 새 환자로 갈라지는 churn 방지
     patientId:
       note.patientId ||
       notes.find((n) => n.id === note.id)?.patientId ||
       resolvePatientId(note, notes),
-    therapist: note.therapist ?? session ?? undefined,
-    therapistUid: note.therapistUid || session?.uid || "",
+    therapist: existingRecord?.therapist ?? (session.role === "master" ? note.therapist : null) ?? session,
+    therapistUid: existingRecord?.therapistUid || (session.role === "master" ? note.therapistUid : "") || session.uid,
   };
 
   const idx = notes.findIndex((n) => n.id === enriched.id);
@@ -370,6 +372,10 @@ async function upsertNoteUnlocked(note: NoteData, expectedSavedAt?: string): Pro
 }
 
 async function deleteNotesUnlocked(ids: string[]): Promise<void> {
+  const actor = currentActor();
+  const candidates = await readNotes();
+  for (const note of candidates.filter(n => n.id && ids.includes(n.id))) requireNoteAccess(note, actor);
+
   const notes = await readNotes();
   await snapshotBeforeDestructive("before-delete", notes);
   await writeNotes(notes.filter((n) => !ids.includes(n.id)));
@@ -381,6 +387,10 @@ async function transferNotesRpcUnlocked(
   toName: string,
   toLoginId: string | null
 ): Promise<number> {
+  const target = read<TherapistRecord[]>(THERAPISTS_KEY, []).find(t => t.uid === toUid && !t.resigned);
+  if (!target) throw new Error("활성 상태의 담당 치료사를 선택해주세요.");
+  toName = target.name; toLoginId = target.id;
+
   const notes = await readNotes();
   let count = 0;
   const updated = notes.map((n) => {
@@ -413,7 +423,8 @@ async function transferNotesRpcUnlocked(
 
 async function fetchTherapistsUnlocked(): Promise<TherapistRecord[]> {
   await ensureBootstrapMaster();
-  return read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  const records = read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  return currentActor().role === "master" ? records : records.map(t => ({ ...t, passwordHash: "" }));
 }
 
 async function createTherapistUnlocked(
@@ -434,6 +445,7 @@ async function createTherapistUnlocked(
     throw new Error("이미 사용 중인 ID입니다.");
   }
 
+  if (password.length < 8) throw new Error("비밀번호는 8자 이상이어야 합니다.");
   const passwordHash = await hashPassword(password);
   const newRecord: TherapistRecord = {
     uid: `therapist-${genId()}`,
@@ -449,6 +461,8 @@ async function createTherapistUnlocked(
 }
 
 async function resignTherapistDbUnlocked(uid: string): Promise<void> {
+  if (read<TherapistRecord[]>(THERAPISTS_KEY, []).find(t => t.uid === uid)?.role === "master") throw new Error("관리자는 퇴사 처리할 수 없습니다.");
+
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
   write(
     THERAPISTS_KEY,
@@ -478,7 +492,7 @@ async function resetTherapistPasswordDbUnlocked(
   uid: string,
   newPassword: string
 ): Promise<void> {
-  const session = read<Therapist | null>(SESSION_KEY, null);
+  const session = currentActor();
   if (!session || session.role !== "master") {
     throw new Error("마스터 계정만 비밀번호를 재설정할 수 있습니다.");
   }
@@ -491,6 +505,7 @@ async function resetTherapistPasswordDbUnlocked(
   if (!target) throw new Error("해당 치료사를 찾을 수 없습니다.");
   if (target.resigned) throw new Error("퇴사 처리된 계정은 재설정할 수 없습니다.");
 
+  if (newPassword.length < 8) throw new Error("비밀번호는 8자 이상이어야 합니다.");
   const passwordHash = await hashPassword(newPassword);
   write(
     THERAPISTS_KEY,
@@ -501,7 +516,7 @@ async function resetTherapistPasswordDbUnlocked(
 async function updateTherapistPasswordViaAuthUnlocked(
   newPassword: string
 ): Promise<void> {
-  const session = read<Therapist | null>(SESSION_KEY, null);
+  const session = currentActor();
   if (!session) throw new Error("로그인 세션이 없습니다.");
 
   // 정책 방어 검증 (UI 우회 대비 단일 소스) — 솔트 PBKDF2 로 저장
@@ -509,11 +524,13 @@ async function updateTherapistPasswordViaAuthUnlocked(
   if (policyError) throw new Error(policyError);
 
   const therapists = read<TherapistRecord[]>(THERAPISTS_KEY, []);
+  if (newPassword.length < 8) throw new Error("비밀번호는 8자 이상이어야 합니다.");
   const passwordHash = await hashPassword(newPassword);
   write(
     THERAPISTS_KEY,
     therapists.map((t) => (t.uid === session.uid ? { ...t, passwordHash } : t))
   );
+  openSession(session);
 }
 
 /* ══════════════════════════════════════════
@@ -533,7 +550,7 @@ async function exportAllDataUnlocked(): Promise<string> {
     passwordHash: "",
   }));
   return JSON.stringify(
-    { app: "PT-NOTE", reason: "manual", version: 3, exportedAt: new Date().toISOString(), notes, therapists },
+    { app: "PT-NOTE", reason: "manual", version: 3, exportedAt: new Date().toISOString(), notes, therapists, history: await readHistory() },
     null,
     2
   );
@@ -655,8 +672,9 @@ async function importCompatibleBackupUnlocked(json: string, passphrase?: string)
   if (incoming.length || accounts.added.length) {
     await snapshotBeforeDestructive("before-import", existing);
     const values: Record<string, string> = {};
-    if (incoming.length) values[NOTES_KEY] = await encryptData(JSON.stringify([...incoming, ...existing]));
+    if (incoming.length) Object.assign(values, await prepareNotesWrite([...incoming, ...existing]));
     if (accounts.added.length) values[THERAPISTS_KEY] = JSON.stringify([...therapists, ...accounts.added]);
+    await includeImportedHistory(values, JSON.parse(plain).history, new Set(incoming.map(n => n.id!)));
     commitData(values);
   }
   return { notesCount: incoming.length, therapistsCount: accounts.added.length, skippedCount: parsed.skippedCount,
@@ -664,23 +682,32 @@ async function importCompatibleBackupUnlocked(json: string, passphrase?: string)
 }
 
 // Hold the origin-wide lock throughout every complete data operation.
-export const signIn = (...args: Parameters<typeof signInUnlocked>): ReturnType<typeof signInUnlocked> => withDataLock(() => signInUnlocked(...args));
-export const signOut = (...args: Parameters<typeof signOutUnlocked>): ReturnType<typeof signOutUnlocked> => withDataLock(() => signOutUnlocked(...args));
-export const reauthenticate = (...args: Parameters<typeof reauthenticateUnlocked>): ReturnType<typeof reauthenticateUnlocked> => withDataLock(() => reauthenticateUnlocked(...args));
-export const fetchNotes = (...args: Parameters<typeof fetchNotesUnlocked>): ReturnType<typeof fetchNotesUnlocked> => withDataLock(() => fetchNotesUnlocked(...args));
-export const upsertNote = (...args: Parameters<typeof upsertNoteUnlocked>): ReturnType<typeof upsertNoteUnlocked> => withDataLock(() => upsertNoteUnlocked(...args));
-export const deleteNotes = (...args: Parameters<typeof deleteNotesUnlocked>): ReturnType<typeof deleteNotesUnlocked> => withDataLock(() => deleteNotesUnlocked(...args));
-export const transferNotesRpc = (...args: Parameters<typeof transferNotesRpcUnlocked>): ReturnType<typeof transferNotesRpcUnlocked> => withDataLock(() => transferNotesRpcUnlocked(...args));
-export const fetchTherapists = (...args: Parameters<typeof fetchTherapistsUnlocked>): ReturnType<typeof fetchTherapistsUnlocked> => withDataLock(() => fetchTherapistsUnlocked(...args));
-export const createTherapist = (...args: Parameters<typeof createTherapistUnlocked>): ReturnType<typeof createTherapistUnlocked> => withDataLock(() => createTherapistUnlocked(...args));
-export const resignTherapistDb = (...args: Parameters<typeof resignTherapistDbUnlocked>): ReturnType<typeof resignTherapistDbUnlocked> => withDataLock(() => resignTherapistDbUnlocked(...args));
-export const deleteTherapistDb = (...args: Parameters<typeof deleteTherapistDbUnlocked>): ReturnType<typeof deleteTherapistDbUnlocked> => withDataLock(() => deleteTherapistDbUnlocked(...args));
-export const resetTherapistPasswordDb = (...args: Parameters<typeof resetTherapistPasswordDbUnlocked>): ReturnType<typeof resetTherapistPasswordDbUnlocked> => withDataLock(() => resetTherapistPasswordDbUnlocked(...args));
-export const updateTherapistPasswordViaAuth = (...args: Parameters<typeof updateTherapistPasswordViaAuthUnlocked>): ReturnType<typeof updateTherapistPasswordViaAuthUnlocked> => withDataLock(() => updateTherapistPasswordViaAuthUnlocked(...args));
-export const exportAllData = (...args: Parameters<typeof exportAllDataUnlocked>): ReturnType<typeof exportAllDataUnlocked> => withDataLock(() => exportAllDataUnlocked(...args));
-export const exportAllDataEncrypted = (...args: Parameters<typeof exportAllDataEncryptedUnlocked>): ReturnType<typeof exportAllDataEncryptedUnlocked> => withDataLock(() => exportAllDataEncryptedUnlocked(...args));
-export const importNotes = (...args: Parameters<typeof importNotesUnlocked>): ReturnType<typeof importNotesUnlocked> => withDataLock(() => importNotesUnlocked(...args));
-export const listAutoBackups = (...args: Parameters<typeof listAutoBackupsUnlocked>): ReturnType<typeof listAutoBackupsUnlocked> => withDataLock(() => listAutoBackupsUnlocked(...args));
-export const restoreAutoBackup = (...args: Parameters<typeof restoreAutoBackupUnlocked>): ReturnType<typeof restoreAutoBackupUnlocked> => withDataLock(() => restoreAutoBackupUnlocked(...args));
-export const importTherapists = (...args: Parameters<typeof importTherapistsUnlocked>): ReturnType<typeof importTherapistsUnlocked> => withDataLock(() => importTherapistsUnlocked(...args));
-export const importCompatibleBackup = (...args: Parameters<typeof importCompatibleBackupUnlocked>): ReturnType<typeof importCompatibleBackupUnlocked> => withDataLock(() => importCompatibleBackupUnlocked(...args));
+export const signIn = (...args: Parameters<typeof signInUnlocked>): ReturnType<typeof signInUnlocked> => withDataLock(() => { setHistoryOperation("signIn"); return signInUnlocked(...args); });
+export const signOut = (...args: Parameters<typeof signOutUnlocked>): ReturnType<typeof signOutUnlocked> => withDataLock(() => { setHistoryOperation("signOut"); return signOutUnlocked(...args); });
+export const reauthenticate = (...args: Parameters<typeof reauthenticateUnlocked>): ReturnType<typeof reauthenticateUnlocked> => withDataLock(() => { currentActor(); setHistoryOperation("reauthenticate"); return reauthenticateUnlocked(...args); });
+export const fetchNotes = (...args: Parameters<typeof fetchNotesUnlocked>): ReturnType<typeof fetchNotesUnlocked> => withDataLock(() => { currentActor(); setHistoryOperation("fetchNotes"); return fetchNotesUnlocked(...args); });
+export const upsertNote = (...args: Parameters<typeof upsertNoteUnlocked>): ReturnType<typeof upsertNoteUnlocked> => withDataLock(() => { currentActor(); setHistoryOperation("upsertNote"); return upsertNoteUnlocked(...args); });
+export const deleteNotes = (...args: Parameters<typeof deleteNotesUnlocked>): ReturnType<typeof deleteNotesUnlocked> => withDataLock(() => { currentActor(); setHistoryOperation("deleteNotes"); return deleteNotesUnlocked(...args); });
+export const transferNotesRpc = (...args: Parameters<typeof transferNotesRpcUnlocked>): ReturnType<typeof transferNotesRpcUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("transferNotesRpc"); return transferNotesRpcUnlocked(...args); });
+export const fetchTherapists = (...args: Parameters<typeof fetchTherapistsUnlocked>): ReturnType<typeof fetchTherapistsUnlocked> => withDataLock(() => { currentActor(); setHistoryOperation("fetchTherapists"); return fetchTherapistsUnlocked(...args); });
+export const createTherapist = (...args: Parameters<typeof createTherapistUnlocked>): ReturnType<typeof createTherapistUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("createTherapist"); return createTherapistUnlocked(...args); });
+export const resignTherapistDb = (...args: Parameters<typeof resignTherapistDbUnlocked>): ReturnType<typeof resignTherapistDbUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("resignTherapistDb"); return resignTherapistDbUnlocked(...args); });
+export const deleteTherapistDb = (...args: Parameters<typeof deleteTherapistDbUnlocked>): ReturnType<typeof deleteTherapistDbUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("deleteTherapistDb"); return deleteTherapistDbUnlocked(...args); });
+export const resetTherapistPasswordDb = (...args: Parameters<typeof resetTherapistPasswordDbUnlocked>): ReturnType<typeof resetTherapistPasswordDbUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("resetTherapistPasswordDb"); return resetTherapistPasswordDbUnlocked(...args); });
+export const updateTherapistPasswordViaAuth = (...args: Parameters<typeof updateTherapistPasswordViaAuthUnlocked>): ReturnType<typeof updateTherapistPasswordViaAuthUnlocked> => withDataLock(() => { currentActor(); setHistoryOperation("updateTherapistPasswordViaAuth"); return updateTherapistPasswordViaAuthUnlocked(...args); });
+export const exportAllData = (...args: Parameters<typeof exportAllDataUnlocked>): ReturnType<typeof exportAllDataUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("exportAllData"); return exportAllDataUnlocked(...args); });
+export const exportAllDataEncrypted = (...args: Parameters<typeof exportAllDataEncryptedUnlocked>): ReturnType<typeof exportAllDataEncryptedUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("exportAllDataEncrypted"); return exportAllDataEncryptedUnlocked(...args); });
+export const importNotes = (...args: Parameters<typeof importNotesUnlocked>): ReturnType<typeof importNotesUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("importNotes"); return importNotesUnlocked(...args); });
+export const listAutoBackups = (...args: Parameters<typeof listAutoBackupsUnlocked>): ReturnType<typeof listAutoBackupsUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("listAutoBackups"); return listAutoBackupsUnlocked(...args); });
+export const restoreAutoBackup = (...args: Parameters<typeof restoreAutoBackupUnlocked>): ReturnType<typeof restoreAutoBackupUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("restoreAutoBackup"); return restoreAutoBackupUnlocked(...args); });
+export const importTherapists = (...args: Parameters<typeof importTherapistsUnlocked>): ReturnType<typeof importTherapistsUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("importTherapists"); return importTherapistsUnlocked(...args); });
+export const importCompatibleBackup = (...args: Parameters<typeof importCompatibleBackupUnlocked>): ReturnType<typeof importCompatibleBackupUnlocked> => withDataLock(() => { requireMaster(); setHistoryOperation("importCompatibleBackup"); return importCompatibleBackupUnlocked(...args); });
+
+export const isSetupRequired = () => withDataLock(isSetupRequiredUnlocked);
+export const setupInitialMaster = (name: string, password: string) => withDataLock(() => setupInitialMasterUnlocked(name, password));
+export const fetchRecordHistory = (id: string) => withDataLock(async () => {
+  const actor = currentActor();
+  const note = (await readNotes()).find(n => n.id === id);
+  if (note) requireNoteAccess(note, actor); else requireMaster();
+  return (await readHistory()).filter(entry => entry.noteId === id);
+});

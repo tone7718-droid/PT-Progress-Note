@@ -1,3 +1,4 @@
+import { flushEditor } from "@/lib/editorDraft";
 import type { ImportResult } from "@/lib/backupExchange";
 import { create } from "zustand";
 import type { NoteData } from "@/types";
@@ -34,14 +35,17 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   isLoading: false,
   error: null,
 
-  selectNote: (id) => set({ selectedNoteId: id }),
-  createNewNote: () => set({ selectedNoteId: null }),
+  selectNote: (id) => {
+    if (id === get().selectedNoteId) return;
+    void flushEditor().then(() => set({ selectedNoteId: id })).catch((err: Error) => set({ error: err.message }));
+  },
+  createNewNote: () => get().selectNote(null),
 
   initSync: () => {
     if (!storageListenerInstalled && typeof window !== "undefined") {
       storageListenerInstalled = true;
       window.addEventListener("storage", (event) => {
-        if ((event.key === "pt_local_notes" || event.key === null) && useAuthStore.getState().therapist) {
+        if ((event.key === "pt_local_notes" || event.key === "pt_local_therapists" || event.key === null) && useAuthStore.getState().therapist) {
           void get().refreshNotes();
         }
       });
@@ -81,6 +85,10 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       set({ notes: fetchedNotes, error: null });
     } catch (err) {
       set({ error: (err as Error).message });
+      if ((err as Error).message.includes("세션이 만료")) {
+        set({ notes: [], selectedNoteId: null });
+        useAuthStore.getState().setTherapist(null);
+      }
     }
   },
 
@@ -93,34 +101,18 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       ? { ...data, id: existingId, savedAt: now }
       : { ...data, id: `note-${genId()}`, savedAt: now };
 
-    // Optimistic Update
-    set((state) => {
-      const updated = existingId
-        ? state.notes.map((n) => (n.id === existingId ? noteToSave : n))
-        : [noteToSave, ...state.notes];
-      return {
-        notes: updated.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()),
-        selectedNoteId: noteToSave.id
-      };
-    });
-
     try {
       const saved = await ds.upsertNote(noteToSave, expectedSavedAt);
-      set((state) => ({
-        notes: state.notes
-          .map((n) => (n.id === saved.id ? saved : n))
-          .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
-      }));
       await get().refreshNotes();
       return saved;
     } catch (err) {
-      // rollback
-      get().refreshNotes();
+      await get().refreshNotes();
       throw err;
     }
   },
 
   deleteNotes: async (ids) => {
+    await flushEditor();
     // 삭제 직전 스냅샷은 ds.deleteNotes 내부에서 1회 수행 (중복 방지)
     set((state) => ({
       notes: state.notes.filter((n) => !ids.includes(n.id)),
@@ -149,6 +141,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   importData: async (json, passphrase) => {
+    await flushEditor();
     const result = await ds.importCompatibleBackup(json, passphrase);
     const [notes, therapists] = await Promise.all([ds.fetchNotes(), ds.fetchTherapists()]);
     set({ notes, error: null });
@@ -161,6 +154,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   restoreBackup: async (at) => {
+    await flushEditor();
     const restored = await ds.restoreAutoBackup(at);
     set({ notes: await ds.fetchNotes(), selectedNoteId: null });
     return restored;

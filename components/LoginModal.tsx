@@ -1,4 +1,6 @@
 "use client";
+import InitialSetup from "./InitialSetup";
+import { isSetupRequired } from "@/lib/localDataService";
 
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -11,11 +13,14 @@ interface LoginModalProps {
 }
 
 export default function LoginModal({ onClose, hideCancel }: LoginModalProps) {
+  const [setup, setSetup] = useState<boolean | null>(null);
   const signIn = useAuthStore((s) => s.signIn);
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  useEffect(() => { void isSetupRequired().then(setSetup).catch((err: Error) => { setError(err.message); setSetup(false); }); }, []);
+
 
   useEffect(() => {
     if (hideCancel) return;
@@ -45,6 +50,8 @@ export default function LoginModal({ onClose, hideCancel }: LoginModalProps) {
     }
   };
 
+  if (setup) return <InitialSetup onDone={onClose} />;
+
   return (
     <Modal layer="login" size="plain">
         <div className="p-8">
@@ -68,7 +75,7 @@ export default function LoginModal({ onClose, hideCancel }: LoginModalProps) {
               {!hideCancel && (
                 <Button type="button" variant="secondary" size="lg" className="flex-[0.4] px-0" onClick={onClose}>취소</Button>
               )}
-              <Button type="submit" variant="primary" size="lg" className="flex-1" disabled={loading}>{loading ? "인증 중..." : "로그인"}</Button>
+              <Button type="submit" variant="primary" size="lg" className="flex-1" disabled={loading || setup === null}>{loading ? "인증 중..." : "로그인"}</Button>
             </div>
           </form>
         </div>

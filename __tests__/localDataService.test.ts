@@ -1,3 +1,4 @@
+import { seedLegacyAdmin, addTransferTarget } from "./testAuth";
 import { describe, it, expect, beforeEach } from "vitest";
 import * as ds from "@/lib/localDataService";
 import type { NoteData } from "@/types";
@@ -26,13 +27,13 @@ const sampleNote = (overrides: Partial<NoteData> = {}): NoteData => ({
   ...overrides,
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   // 각 테스트마다 깨끗한 localStorage 로 시작
-  window.localStorage.clear();
+  await seedLegacyAdmin();
 });
 
 describe("localDataService — auth", () => {
-  it("first signIn bootstraps default master account (master / 0000)", async () => {
+  it("existing legacy administrator can still sign in", async () => {
     const result = await ds.signIn("master", "0000");
     expect(result.therapist.role).toBe("master");
     expect(result.therapist.id).toBe("master");
@@ -70,12 +71,12 @@ describe("localDataService — change own password", () => {
 
   it("can be changed repeatedly (no first-change lock)", async () => {
     await ds.signIn("master", "0000");
-    await ds.updateTherapistPasswordViaAuth("first-1");
+    await ds.updateTherapistPasswordViaAuth("first-11");
     await ds.updateTherapistPasswordViaAuth("second-2");
     await ds.updateTherapistPasswordViaAuth("third-33");
 
     expect(await ds.reauthenticate("master", "third-33")).toBe(true);
-    expect(await ds.reauthenticate("master", "first-1")).toBe(false);
+    expect(await ds.reauthenticate("master", "first-11")).toBe(false);
     expect(await ds.reauthenticate("master", "second-2")).toBe(false);
   });
 
@@ -86,12 +87,12 @@ describe("localDataService — change own password", () => {
 
   it("regular therapist can change their own password", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapist("PT-001", "김치료", "1234");
-    await ds.signIn("PT-001", "1234"); // 일반 치료사로 로그인 (세션 전환)
+    await ds.createTherapist("PT-001", "김치료", "Test1234!");
+    await ds.signIn("PT-001", "Test1234!"); // 일반 치료사로 로그인 (세션 전환)
 
     await ds.updateTherapistPasswordViaAuth("Pt-secret9");
     expect(await ds.reauthenticate("PT-001", "Pt-secret9")).toBe(true);
-    expect(await ds.reauthenticate("PT-001", "1234")).toBe(false);
+    expect(await ds.reauthenticate("PT-001", "Test1234!")).toBe(false);
     // 마스터 계정은 영향 없음
     expect(await ds.reauthenticate("master", "0000")).toBe(true);
   });
@@ -237,7 +238,7 @@ describe("localDataService — therapist import", () => {
 
   it("skips master records and active login-id collisions", async () => {
     await ds.signIn("master", "0000");
-    await ds.createTherapist("PT-001", "기존", "1234");
+    await ds.createTherapist("PT-001", "기존", "Test1234!");
 
     const imported = await ds.importTherapists([
       record("m2", "master2", { role: "master" as const }), // 마스터 → 스킵
@@ -307,7 +308,7 @@ describe("localDataService — export security (v3)", () => {
     const backup = JSON.parse(await ds.exportAllData());
 
     // 새 기기 시뮬레이션
-    window.localStorage.clear();
+    await seedLegacyAdmin();
     await ds.signIn("master", "0000"); // 새 기기의 master 부트스트랩
     const imported = await ds.importTherapists(backup.therapists);
     expect(imported).toBe(1);
@@ -327,7 +328,7 @@ describe("localDataService — export security (v3)", () => {
     await ds.createTherapist("PT-001", "김치료", "Secret1!");
     const withHash = (await ds.fetchTherapists()).find((t) => t.id === "PT-001")!;
 
-    window.localStorage.clear();
+    await seedLegacyAdmin();
     await ds.signIn("master", "0000");
     expect(await ds.importTherapists([withHash])).toBe(1);
 
@@ -345,7 +346,7 @@ describe("localDataService — master password reset", () => {
 
     await ds.signIn("PT-001", "Secret1!"); // 일반 치료사 세션으로 전환
     await expect(ds.resetTherapistPasswordDb(target.uid, "Hijack99!")).rejects.toThrow(
-      /마스터 계정만/
+      /관리자 권한/
     );
   });
 
@@ -355,7 +356,7 @@ describe("localDataService — master password reset", () => {
     const target = (await ds.fetchTherapists()).find((t) => t.id === "PT-001")!;
 
     await expect(ds.resetTherapistPasswordDb(target.uid, "0000")).rejects.toThrow(/기본 비밀번호/);
-    await expect(ds.resetTherapistPasswordDb(target.uid, "abc")).rejects.toThrow(/4~20자/);
+    await expect(ds.resetTherapistPasswordDb(target.uid, "abc")).rejects.toThrow(/8~20자/);
   });
 });
 
@@ -366,10 +367,10 @@ describe("localDataService — registration password policy", () => {
       /기본 비밀번호/
     );
     await expect(ds.createTherapist("PT-001", "김치료", "abc")).rejects.toThrow(
-      /4~20자/
+      /8~20자/
     );
     await expect(
-      ds.createTherapist("PT-001", "김치료", "한글비밀번호")
+      ds.createTherapist("PT-001", "김치료", "한글비밀번호여덟자")
     ).rejects.toThrow(/영문·숫자·특수문자/);
   });
 
@@ -545,6 +546,7 @@ describe("localDataService — note transfer", () => {
       sampleNote({ id: "n3", therapistUid: "uid-B" })
     );
 
+    await addTransferTarget("uid-B", "PT-002", "B-치료사");
     const count = await ds.transferNotesRpc("uid-A", "uid-B", "B-치료사", "PT-002");
     expect(count).toBe(2);
 

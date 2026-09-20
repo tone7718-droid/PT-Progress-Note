@@ -1,4 +1,7 @@
 "use client";
+import DraftRecoveryPanel from "./DraftRecoveryPanel";
+import RecordHistoryPanel from "./RecordHistoryPanel";
+import { markEditorSaved } from "@/lib/editorDraft";
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useForm, FormProvider } from "react-hook-form";
@@ -7,8 +10,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { EMPTY_NOTE, type NoteData, type Therapist } from "@/types";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas-pro";
-import { Save, X as XIcon, Clock, Copy, Printer, FileDown, ChevronDown, Sparkles } from "lucide-react";
-import { loadDraft, saveDraft, clearDraft, isNoteContentful, formatRelativeTime, formatClockTime, type DraftNoteData } from "@/lib/draftNote";
+import { X as Copy, Printer, FileDown, ChevronDown, Sparkles } from "lucide-react";
 import { todayLocalISO } from "@/lib/localDate";
 import { getPdfPageSlices } from "@/lib/pdfSlices";
 
@@ -42,10 +44,6 @@ export default function ProgressNoteForm() {
   const [outputMenuOpen, setOutputMenuOpen] = useState(false);
 
   // 자동 임시 저장
-  const [pendingDraft, setPendingDraft] = useState<DraftNoteData | null>(null);
-  const [autoSaveFlash, setAutoSaveFlash] = useState(false);
-  const [lastDraftAt, setLastDraftAt] = useState<string | null>(null);
-  const lastDraftJsonRef = useRef<string | null>(null); // 직전 자동 저장본 (변경 없으면 스킵)
 
   // 노트 복사 (이 노트를 베이스로 새 노트 시작)
   const pendingCopyRef = useRef<NoteData | null>(null);
@@ -81,28 +79,15 @@ export default function ProgressNoteForm() {
         reset({ ...src, rom: roms });
         setCurrentNoteId(null);
         setSavedTherapist(null);
-        setPendingDraft(null); // 복구 배너 숨김 — 방금 복사 데이터로 채웠으니 draft 와 무관
         return;
       }
       // [일반 새 노트 모드]
       reset({ ...EMPTY_NOTE, noteDate: todayLocalISO(), rom: [{ joint: "", measuredROM: "", normalRange: "" }] });
       setCurrentNoteId(null);
       setSavedTherapist(null);
-      setLastDraftAt(null);
-      lastDraftJsonRef.current = null;
-      // 임시 저장된 draft 가 있으면 복구 배너 표시 (복호화가 비동기라 로드 완료 후 반영)
-      let cancelled = false;
-      void loadDraft().then((d) => {
-        if (cancelled) return;
-        setPendingDraft(d && isNoteContentful(d) ? d : null);
-      });
-      return () => {
-        cancelled = true;
-      };
+
     }
     // 기존 노트 편집 모드 → draft 배너 숨김
-    setPendingDraft(null);
-    setLastDraftAt(null);
     // notes 는 구독하지 않고 스냅샷으로만 읽는다 — notes 배열 정체성 변경
     // (다른 노트 삭제/이관/가져오기 등)이 작성 중인 폼을 리셋하지 않도록.
     const note = useNoteStore.getState().notes.find((n) => n.id === selectedNoteId);
@@ -115,41 +100,6 @@ export default function ProgressNoteForm() {
       setSavedTherapist(note.therapist ?? null);
     }
   }, [selectedNoteId, reset]);
-
-  /* ── 자동 임시 저장 (5초 주기) ──
-     새 노트 작성 모드에서만 작동. 빈 폼·직전 저장본과 동일한 내용은 저장 안 함.
-     [저장] 성공 시 clearDraft() 로 정리됨. */
-  useEffect(() => {
-    if (currentNoteId !== null) return; // 기존 노트 수정 중은 제외
-    const interval = window.setInterval(() => {
-      const data = methods.getValues();
-      if (!isNoteContentful(data)) return;
-      const serialized = JSON.stringify(data);
-      if (serialized === lastDraftJsonRef.current) return; // 변경 없음 — 스킵
-      void saveDraft(data).then(() => {
-        setSaveError("");
-        lastDraftJsonRef.current = serialized;
-        setLastDraftAt(new Date().toISOString());
-        setAutoSaveFlash(true);
-        window.setTimeout(() => setAutoSaveFlash(false), 1200);
-      }).catch((err: Error) => setSaveError(err.message || "임시 저장에 실패했습니다."));
-    }, 5000);
-    return () => window.clearInterval(interval);
-  }, [currentNoteId, methods]);
-
-  const restoreDraft = () => {
-    if (!pendingDraft) return;
-    const { draftSavedAt: _omit, ...data } = pendingDraft;
-    void _omit;
-    const roms = data.rom && data.rom.length > 0 ? data.rom : [{ joint: "", measuredROM: "", normalRange: "" }];
-    reset({ ...EMPTY_NOTE, ...data, rom: roms });
-    setPendingDraft(null);
-  };
-
-  const discardDraft = () => {
-    void clearDraft().catch((err: Error) => setSaveError(err.message));
-    setPendingDraft(null);
-  };
 
   /* 현재 보고 있는 기존 노트를 베이스로 새 노트 시작 */
   const handleCopyToNewNote = () => {
@@ -202,9 +152,9 @@ export default function ProgressNoteForm() {
       methods.setValue("savedAt", saved.savedAt);
       setShowSaved(true);
       // 정상 저장 → 임시 저장 정리
-      await clearDraft();
-      setPendingDraft(null);
-      setLastDraftAt(null);
+      await markEditorSaved();
+      useNoteStore.getState().selectNote(saved.id);
+      setSaveError("");
       setTimeout(() => setShowSaved(false), 3000);
     } catch (err) {
       console.error("저장 실패:", err);
@@ -320,7 +270,10 @@ export default function ProgressNoteForm() {
 
   return (
     <FormProvider {...methods}>
+      <DraftRecoveryPanel noteId={selectedNoteId} />
+      <RecordHistoryPanel key={selectedNoteId ?? "new"} noteId={selectedNoteId} />
       <form onSubmit={handleSubmit(onSaveSubmit, onInvalid)}>
+        <fieldset disabled={isSaving}>
         {(saveError || storageError) && <p role="alert" className="p-3 text-sm font-bold text-red-600">{saveError || storageError}</p>}
         <div 
           className={isGeneratingPdf
@@ -372,49 +325,7 @@ export default function ProgressNoteForm() {
             </div>
 
             <div className={`mb-3 sm:mb-6 flex flex-col gap-2 ${isGeneratingPdf ? 'hidden' : 'print:hidden'}`}>
-              {/* 임시 저장 복구 배너 — 새 노트 모드에서 이전 작성 내용이 있을 때 */}
-              {pendingDraft && !currentNoteId && (
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800 rounded-xl shadow-sm">
-                  <Clock size={16} className="text-amber-600 dark:text-amber-300 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-amber-900 dark:text-amber-100">이전에 작성하던 내용이 있어요</p>
-                    <p className="text-xs text-amber-700 dark:text-amber-300">자동 임시 저장됨 · {formatRelativeTime(pendingDraft.draftSavedAt)}</p>
-                  </div>
-                  <div className="flex gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={restoreDraft}
-                      className="flex items-center gap-1 px-3 py-1.5 text-xs sm:text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors"
-                    >
-                      <Save size={14} /> 불러오기
-                    </button>
-                    <button
-                      type="button"
-                      onClick={discardDraft}
-                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
-                      aria-label="임시 저장 삭제"
-                    >
-                      <XIcon size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-
               <div className="flex items-center gap-2 text-sm font-medium">
-                {/* 자동 저장 표시 (새 노트 모드만) */}
-                {!currentNoteId && (
-                  <span
-                    className={`inline-flex items-center gap-1 text-xs font-bold transition-colors duration-300 ${
-                      autoSaveFlash ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-gray-500"
-                    }`}
-                    aria-live="polite"
-                  >
-                    <Clock size={12} />
-                    {lastDraftAt
-                      ? `마지막 임시 저장 ${formatClockTime(lastDraftAt)}`
-                      : "5초마다 자동 저장"}
-                  </span>
-                )}
                 {currentNoteId ? (
                   <div className="flex items-center gap-2 ml-auto">
                     <button
@@ -527,6 +438,7 @@ export default function ProgressNoteForm() {
             노트가 성공적으로 저장되었습니다.
           </div>
         )}
+        </fieldset>
       </form>
     </FormProvider>
   );
