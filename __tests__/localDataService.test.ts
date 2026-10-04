@@ -236,20 +236,20 @@ describe("localDataService — therapist import", () => {
     expect(all.filter((t) => t.role === "therapist")).toHaveLength(1);
   });
 
-  it("skips master records and active login-id collisions", async () => {
+  it("skips masters and preserves login collisions as unassigned identities", async () => {
     await ds.signIn("master", "0000");
     await ds.createTherapist("PT-001", "기존", "Test1234!");
 
     const imported = await ds.importTherapists([
       record("m2", "master2", { role: "master" as const }), // 마스터 → 스킵
-      record("t2", "PT-001"), // 활성 ID 충돌 → 스킵
+      record("t2", "PT-001"), // 활성 ID 충돌 → 미배정 보존
       record("t3", "PT-002"), // 정상
     ]);
-    expect(imported).toBe(1);
+    expect(imported).toBe(2);
 
     const all = await ds.fetchTherapists();
     expect(all.find((t) => t.uid === "t3")).toBeTruthy();
-    expect(all.find((t) => t.uid === "t2")).toBeUndefined();
+    expect(all.find((t) => t.uid === "t2")).toMatchObject({ id: null, importUnassigned: true, passwordHash: "" });
     expect(all.find((t) => t.uid === "m2")).toBeUndefined();
   });
 });

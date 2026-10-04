@@ -1,4 +1,5 @@
 "use client";
+import ImportedAssignments from "@/components/ImportedAssignments";
 
 import { useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -46,7 +47,7 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
   const [resetError, setResetError] = useState("");
   const [resetting, setResetting] = useState(false);
 
-  const activeTherapists = therapists.filter((t) => !t.resigned && t.role !== "master");
+  const activeTherapists = therapists.filter((t) => !t.resigned && !t.importUnassigned && t.role !== "master");
   const resignedTherapists = therapists.filter((t) => t.resigned);
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -188,6 +189,7 @@ export default function TherapistManagementModal({ onClose }: TherapistManagemen
             </form>
           ) : (
             <div className="space-y-6">
+              <ImportedAssignments />
               <div>
                 <h3 className="text-sm font-bold text-gray-400 dark:text-gray-500 mb-3 uppercase tracking-wider">재직 중인 치료사</h3>
                 {activeTherapists.length === 0 ? (
