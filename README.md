@@ -36,7 +36,9 @@ and prompts the user when a new signed release is available.
   macOS Keychain / Linux Secret Service)에 보관하며, 구버전이 localStorage 에
   두었던 키는 최초 실행 시 자동 이관됩니다. 웹 브라우저에서는 구조적 대안이
   없어 키가 localStorage 에 남습니다 — 이 경우 암호화는 "디스크 파일 평문
-  노출 방지" 수준이며, 브라우저 프로필 접근자로부터는 보호하지 못합니다.
+  노출 방지" 수준이며, 브라우저 프로필 접근자로부터는 보호하지 못합니다
+  (웹판 로그인 화면에 안내 표시).
+- **웹 보안 헤더**: `vercel.json` 에서 CSP·X-Frame-Options 등을 적용합니다.
 - **비밀번호 정책**: 치료사 비밀번호는 등록·변경 공통으로 8~20자
   영문/숫자/특수문자입니다 (PBKDF2 200k iterations, salt 적용).
   다만 로컬 데이터에 접근 가능한 공격자의 오프라인 브루트포스까지 막지는

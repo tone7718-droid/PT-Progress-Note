@@ -55,3 +55,6 @@ next-env.d.ts
 
 # Supabase CLI local artifacts
 supabase/.temp/
+
+# Local Android build logs
+android/build_output.txt
